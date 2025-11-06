@@ -9,7 +9,7 @@ import { vitePluginManusRuntime } from "vite-plugin-manus-runtime";
 const plugins = [react(), tailwindcss(), jsxLocPlugin(), vitePluginManusRuntime()];
 
 export default defineConfig({
-  base: process.env.GITHUB_PAGES === 'true' ? '/google-tasks-manager/' : '/',
+  base: '/google-tasks-manager/',
   plugins,
   resolve: {
     alias: {
@@ -21,7 +21,7 @@ export default defineConfig({
   envDir: path.resolve(import.meta.dirname),
   root: path.resolve(import.meta.dirname, "client"),
   build: {
-    outDir: path.resolve(import.meta.dirname, "dist/public"),
+    outDir: path.resolve(import.meta.dirname, "dist"),
     emptyOutDir: true,
   },
   server: {
