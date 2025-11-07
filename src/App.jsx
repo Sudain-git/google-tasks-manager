@@ -129,6 +129,44 @@ function App() {
   const [playlistProgress, setPlaylistProgress] = useState({ current: 0, total: 0 });
   const [playlistStatus, setPlaylistStatus] = useState('');
 
+  // Complete Tasks state
+  const [completeTasksList, setCompleteTasksList] = useState('');
+  const [completeTasks, setCompleteTasks] = useState([]);
+  const [isLoadingCompleteTasks, setIsLoadingCompleteTasks] = useState(false);
+  const [completeSearchTerm, setCompleteSearchTerm] = useState('');
+  const [completeCaseSensitive, setCompleteCaseSensitive] = useState(true);
+  const [completeSortBy, setCompleteSortBy] = useState('alphabetical');
+  const [completeCurrentPage, setCompleteCurrentPage] = useState(1);
+  const [completeSelectedTasks, setCompleteSelectedTasks] = useState([]);
+  const [completeActivePreset, setCompleteActivePreset] = useState('');
+  const [isCompletingTasks, setIsCompletingTasks] = useState(false);
+  const [completeProgress, setCompleteProgress] = useState({ current: 0, total: 0 });
+  const [completeStatus, setCompleteStatus] = useState('');
+  const [completeDurationFilter, setCompleteDurationFilter] = useState({
+    enabled: false,
+    mode: 'single',
+    value: '',
+    valueMin: '',
+    valueMax: '',
+    unit: 'seconds',
+    operator: 'less'
+  });
+  const [completeOmitRecurring, setCompleteOmitRecurring] = useState(true);
+  const [completeHierarchyFilter, setCompleteHierarchyFilter] = useState({
+    standalone: true,
+    parent: true,
+    child: true
+  });
+  const [completeDateFilter, setCompleteDateFilter] = useState({
+    enabled: false,
+    mode: 'exact',
+    date: '',
+    dateStart: '',
+    dateEnd: ''
+  });
+  const [completeShowDuplicates, setCompleteShowDuplicates] = useState(false);
+  const [completeSortField, setCompleteSortField] = useState('title');
+
   // Initialize Google API
   useEffect(() => {
     const initializeGapi = async () => {
@@ -1826,6 +1864,307 @@ function App() {
         setIsProcessingPlaylist(false);
         setPlaylistProgress({ current: 0, total: 0 });
         setPlaylistStatus('');
+      }, 5000);
+    }
+  };
+
+  // Complete Tasks Functions
+  const loadCompleteTasks = async () => {
+    if (!completeTasksList || !isSignedIn) return;
+
+    setIsLoadingCompleteTasks(true);
+    setCompleteTasks([]);
+    setCompleteSelectedTasks([]);
+
+    try {
+      let allTasks = [];
+      let pageToken = null;
+
+      do {
+        const params = {
+          tasklist: completeTasksList,
+          maxResults: 100,
+          showCompleted: true,
+          showHidden: true
+        };
+
+        if (pageToken) {
+          params.pageToken = pageToken;
+        }
+
+        const response = await window.gapi.client.tasks.tasks.list(params);
+        
+        if (response.result.items) {
+          allTasks = allTasks.concat(response.result.items);
+        }
+
+        pageToken = response.result.nextPageToken;
+
+        // Rate limiting
+        if (pageToken) {
+          await new Promise(resolve => setTimeout(resolve, 300));
+        }
+      } while (pageToken);
+
+      console.log(`Loaded ${allTasks.length} tasks from list`);
+      setCompleteTasks(allTasks);
+      setCompleteCurrentPage(1);
+
+    } catch (error) {
+      console.error('Error loading complete tasks:', error);
+      alert('Error loading tasks. Please try again.');
+    } finally {
+      setIsLoadingCompleteTasks(false);
+    }
+  };
+
+  useEffect(() => {
+    if (completeTasksList) {
+      loadCompleteTasks();
+    }
+  }, [completeTasksList]);
+
+  const filterAndSortCompleteTasks = () => {
+    let filtered = [...completeTasks];
+
+    // Filter out completed tasks (we only want incomplete tasks)
+    filtered = filtered.filter(task => task.status !== 'completed');
+
+    // Apply search filter
+    if (completeSearchTerm.trim()) {
+      const searchLower = completeCaseSensitive ? completeSearchTerm : completeSearchTerm.toLowerCase();
+      filtered = filtered.filter(task => {
+        const fieldToSearch = completeSortField === 'notes' ? (task.notes || '') : task.title;
+        const taskField = completeCaseSensitive ? fieldToSearch : fieldToSearch.toLowerCase();
+        return taskField.includes(searchLower);
+      });
+    }
+
+    // Apply duplicate filter
+    if (completeShowDuplicates) {
+      const fieldToCheck = completeSortField;
+      const valueCounts = new Map();
+      
+      filtered.forEach(task => {
+        const value = fieldToCheck === 'notes' ? (task.notes || '') : task.title;
+        const normalizedValue = completeCaseSensitive ? value : value.toLowerCase();
+        valueCounts.set(normalizedValue, (valueCounts.get(normalizedValue) || 0) + 1);
+      });
+      
+      filtered = filtered.filter(task => {
+        const value = fieldToCheck === 'notes' ? (task.notes || '') : task.title;
+        const normalizedValue = completeCaseSensitive ? value : value.toLowerCase();
+        return valueCounts.get(normalizedValue) > 1;
+      });
+    }
+
+    // Apply duration filter
+    if (completeDurationFilter.enabled) {
+      const unitMultipliers = {
+        'seconds': 1,
+        'minutes': 60,
+        'hours': 3600,
+        'days': 86400
+      };
+      
+      if (completeDurationFilter.mode === 'range' && completeDurationFilter.valueMin && completeDurationFilter.valueMax) {
+        const filterMinSeconds = parseFloat(completeDurationFilter.valueMin) * (unitMultipliers[completeDurationFilter.unit] || 1);
+        const filterMaxSeconds = parseFloat(completeDurationFilter.valueMax) * (unitMultipliers[completeDurationFilter.unit] || 1);
+        
+        filtered = filtered.filter(task => {
+          const taskDurationSeconds = parseDurationFromNotes(task.notes);
+          if (taskDurationSeconds === null) return false;
+          return taskDurationSeconds >= filterMinSeconds && taskDurationSeconds <= filterMaxSeconds;
+        });
+      } else if (completeDurationFilter.mode === 'single' && completeDurationFilter.value) {
+        const filterValue = parseFloat(completeDurationFilter.value);
+        const filterSeconds = filterValue * (unitMultipliers[completeDurationFilter.unit] || 1);
+        
+        filtered = filtered.filter(task => {
+          const taskDurationSeconds = parseDurationFromNotes(task.notes);
+          if (taskDurationSeconds === null) return false;
+          
+          switch (completeDurationFilter.operator) {
+            case 'less':
+              return taskDurationSeconds < filterSeconds;
+            case 'greater':
+              return taskDurationSeconds > filterSeconds;
+            case 'equal':
+              return Math.abs(taskDurationSeconds - filterSeconds) < 0.01;
+            default:
+              return true;
+          }
+        });
+      }
+    }
+
+    // Filter out recurring tasks if option is enabled
+    if (completeOmitRecurring) {
+      filtered = filtered.filter(task => !task.recurrence);
+    }
+
+    // Apply hierarchy filter
+    filtered = filtered.filter(task => {
+      const isParent = task.hasChildren || false;
+      const isChild = task.parent ? true : false;
+      const isStandalone = !isParent && !isChild;
+      
+      if (isStandalone && !completeHierarchyFilter.standalone) return false;
+      if (isParent && !completeHierarchyFilter.parent) return false;
+      if (isChild && !completeHierarchyFilter.child) return false;
+      
+      return true;
+    });
+
+    // Apply date filter
+    if (completeDateFilter.enabled) {
+      filtered = filtered.filter(task => {
+        if (!task.due) return false;
+        
+        const taskDate = new Date(task.due);
+        taskDate.setHours(0, 0, 0, 0);
+        const taskTime = taskDate.getTime();
+        
+        switch (completeDateFilter.mode) {
+          case 'exact':
+            if (!completeDateFilter.date) return true;
+            const filterDate = new Date(completeDateFilter.date);
+            filterDate.setHours(0, 0, 0, 0);
+            return taskTime === filterDate.getTime();
+            
+          case 'before':
+            if (!completeDateFilter.date) return true;
+            const beforeDate = new Date(completeDateFilter.date);
+            beforeDate.setHours(0, 0, 0, 0);
+            return taskTime <= beforeDate.getTime();
+            
+          case 'after':
+            if (!completeDateFilter.date) return true;
+            const afterDate = new Date(completeDateFilter.date);
+            afterDate.setHours(0, 0, 0, 0);
+            return taskTime >= afterDate.getTime();
+            
+          case 'range':
+            if (!completeDateFilter.dateStart || !completeDateFilter.dateEnd) return true;
+            const startDate = new Date(completeDateFilter.dateStart);
+            startDate.setHours(0, 0, 0, 0);
+            const endDate = new Date(completeDateFilter.dateEnd);
+            endDate.setHours(0, 0, 0, 0);
+            return taskTime >= startDate.getTime() && taskTime <= endDate.getTime();
+            
+          default:
+            return true;
+        }
+      });
+    }
+
+    // Apply sorting
+    filtered.sort((a, b) => {
+      switch (completeSortBy) {
+        case 'alphabetical':
+          return a.title.localeCompare(b.title);
+        case 'reverse-alphabetical':
+          return b.title.localeCompare(a.title);
+        case 'due-date-earliest':
+          if (!a.due && !b.due) return 0;
+          if (!a.due) return 1;
+          if (!b.due) return -1;
+          return new Date(a.due) - new Date(b.due);
+        case 'due-date-latest':
+          if (!a.due && !b.due) return 0;
+          if (!a.due) return 1;
+          if (!b.due) return -1;
+          return new Date(b.due) - new Date(a.due);
+        default:
+          return 0;
+      }
+    });
+
+    return filtered;
+  };
+
+  const getCompletePageData = () => {
+    const filtered = filterAndSortCompleteTasks();
+    const tasksPerPage = 20;
+    const totalPages = Math.ceil(filtered.length / tasksPerPage);
+    const startIndex = (completeCurrentPage - 1) * tasksPerPage;
+    const endIndex = startIndex + tasksPerPage;
+    const paginatedTasks = filtered.slice(startIndex, endIndex);
+
+    return {
+      tasks: paginatedTasks,
+      totalTasks: filtered.length,
+      totalPages,
+      currentPage: completeCurrentPage
+    };
+  };
+
+  const markTasksComplete = async () => {
+    if (completeSelectedTasks.length === 0) return;
+
+    setIsCompletingTasks(true);
+    setCompleteProgress({ current: 0, total: completeSelectedTasks.length });
+    setCompleteStatus('Starting to mark tasks as complete...');
+
+    let successCount = 0;
+    let failureCount = 0;
+
+    try {
+      // Process tasks serially
+      for (let i = 0; i < completeSelectedTasks.length; i++) {
+        const taskId = completeSelectedTasks[i];
+        const task = completeTasks.find(t => t.id === taskId);
+
+        setCompleteProgress({ current: i + 1, total: completeSelectedTasks.length });
+        setCompleteStatus(`Completing task ${i + 1} of ${completeSelectedTasks.length}: ${task?.title || taskId}`);
+
+        try {
+          // Mark task as complete
+          const updateResponse = await window.gapi.client.tasks.tasks.patch({
+            tasklist: completeTasksList,
+            task: taskId,
+            resource: {
+              status: 'completed'
+            }
+          });
+
+          // Verify the task was marked as complete
+          if (updateResponse.result.status === 'completed') {
+            successCount++;
+            console.log(`Task ${taskId} marked as complete`);
+          } else {
+            failureCount++;
+            console.error(`Task ${taskId} update did not verify`);
+          }
+
+          // Rate limiting - 300ms between requests
+          await new Promise(resolve => setTimeout(resolve, 300));
+
+        } catch (error) {
+          console.error(`Error completing task ${taskId}:`, error);
+          failureCount++;
+        }
+      }
+
+      // Show final status
+      if (failureCount === 0) {
+        setCompleteStatus(`✅ Successfully marked ${successCount} tasks as complete!`);
+      } else {
+        setCompleteStatus(`⚠️ Marked ${successCount} tasks as complete, ${failureCount} failed`);
+      }
+
+      // Reload tasks to reflect changes
+      await loadCompleteTasks();
+
+    } catch (error) {
+      console.error('Error in markTasksComplete:', error);
+      setCompleteStatus(`❌ Error: ${error.message}`);
+    } finally {
+      setTimeout(() => {
+        setIsCompletingTasks(false);
+        setCompleteProgress({ current: 0, total: 0 });
+        setCompleteStatus('');
+        setCompleteSelectedTasks([]);
       }, 5000);
     }
   };
@@ -4436,6 +4775,356 @@ function App() {
           </div>
         );
 
+      case 8:
+        return (
+          <div className="tab-content">
+            <h2>Complete Tasks</h2>
+            {isSignedIn ? (
+              <>
+                {/* Task List Selection */}
+                <div className="task-list-selection-section">
+                  <h4>Select Task List</h4>
+                  <p className="section-description">Choose the task list containing tasks you want to mark as complete.</p>
+                  <div className="form-group">
+                    <label htmlFor="completeTasksList">Task List:</label>
+                    <select
+                      id="completeTasksList"
+                      value={completeTasksList}
+                      onChange={(e) => setCompleteTasksList(e.target.value)}
+                      className="form-select"
+                      disabled={isCompletingTasks}
+                    >
+                      <option value="">Choose a task list...</option>
+                      {taskLists.map(list => (
+                        <option key={list.id} value={list.id}>{list.title}</option>
+                      ))}
+                    </select>
+                  </div>
+                  {isLoadingCompleteTasks && (
+                    <div className="loading-container">
+                      <div className="throbber"></div>
+                      <p>Loading tasks...</p>
+                    </div>
+                  )}
+                </div>
+
+                {/* Search and Filter Section - Only show if tasks are loaded */}
+                {completeTasksList && completeTasks.length > 0 && (
+                  <div className="search-filter-section">
+                    <h4>Search and Filter Tasks</h4>
+                    <p className="section-description">Find specific tasks to mark as complete using search and filters.</p>
+                    
+                    {/* Search Controls */}
+                    <div className="search-controls">
+                      <div className="search-row">
+                        <input
+                          type="text"
+                          placeholder="Search tasks..."
+                          value={completeSearchTerm}
+                          onChange={(e) => setCompleteSearchTerm(e.target.value)}
+                          className="search-input"
+                          disabled={isCompletingTasks}
+                        />
+                        <div className="radio-group">
+                          <label className="radio-label">
+                            <input
+                              type="radio"
+                              checked={completeSortField === 'title'}
+                              onChange={() => setCompleteSortField('title')}
+                              disabled={isCompletingTasks}
+                            />
+                            Title
+                          </label>
+                          <label className="radio-label">
+                            <input
+                              type="radio"
+                              checked={completeSortField === 'notes'}
+                              onChange={() => setCompleteSortField('notes')}
+                              disabled={isCompletingTasks}
+                            />
+                            Notes
+                          </label>
+                        </div>
+                      </div>
+
+                      <div className="filter-row">
+                        <label className="checkbox-label">
+                          <input
+                            type="checkbox"
+                            checked={completeCaseSensitive}
+                            onChange={(e) => setCompleteCaseSensitive(e.target.checked)}
+                            disabled={isCompletingTasks}
+                          />
+                          Case Sensitive
+                        </label>
+
+                        <label className="checkbox-label">
+                          <input
+                            type="checkbox"
+                            checked={completeShowDuplicates}
+                            onChange={(e) => setCompleteShowDuplicates(e.target.checked)}
+                            disabled={isCompletingTasks}
+                          />
+                          Show Only Duplicates
+                        </label>
+
+                        <label className="checkbox-label">
+                          <input
+                            type="checkbox"
+                            checked={completeOmitRecurring}
+                            onChange={(e) => setCompleteOmitRecurring(e.target.checked)}
+                            disabled={isCompletingTasks}
+                          />
+                          Omit Recurring Tasks
+                        </label>
+
+                        <div className="sort-controls">
+                          <label>Sort by:</label>
+                          <select
+                            value={completeSortBy}
+                            onChange={(e) => setCompleteSortBy(e.target.value)}
+                            className="form-select"
+                            disabled={isCompletingTasks}
+                          >
+                            <option value="alphabetical">A-Z</option>
+                            <option value="reverse-alphabetical">Z-A</option>
+                            <option value="due-date-earliest">Due Date (Earliest First)</option>
+                            <option value="due-date-latest">Due Date (Latest First)</option>
+                          </select>
+                        </div>
+                      </div>
+
+                      {/* Date Filter */}
+                      <div className="date-filter-section">
+                        <label className="checkbox-label">
+                          <input
+                            type="checkbox"
+                            checked={completeDateFilter.enabled}
+                            onChange={(e) => setCompleteDateFilter({...completeDateFilter, enabled: e.target.checked})}
+                            disabled={isCompletingTasks}
+                          />
+                          Filter by due date
+                        </label>
+                        {completeDateFilter.enabled && (
+                          <div className="date-picker-container" style={{marginTop: '12px'}}>
+                            <div className="radio-group-vertical" style={{marginBottom: '8px'}}>
+                              <label className="radio-label" style={{marginRight: '15px'}}>
+                                <input
+                                  type="radio"
+                                  checked={completeDateFilter.mode === 'exact'}
+                                  onChange={() => setCompleteDateFilter({...completeDateFilter, mode: 'exact'})}
+                                  disabled={isCompletingTasks}
+                                />
+                                Exact date
+                              </label>
+                              <label className="radio-label" style={{marginRight: '15px'}}>
+                                <input
+                                  type="radio"
+                                  checked={completeDateFilter.mode === 'before'}
+                                  onChange={() => setCompleteDateFilter({...completeDateFilter, mode: 'before'})}
+                                  disabled={isCompletingTasks}
+                                />
+                                On or before
+                              </label>
+                              <label className="radio-label" style={{marginRight: '15px'}}>
+                                <input
+                                  type="radio"
+                                  checked={completeDateFilter.mode === 'after'}
+                                  onChange={() => setCompleteDateFilter({...completeDateFilter, mode: 'after'})}
+                                  disabled={isCompletingTasks}
+                                />
+                                On or after
+                              </label>
+                              <label className="radio-label">
+                                <input
+                                  type="radio"
+                                  checked={completeDateFilter.mode === 'range'}
+                                  onChange={() => setCompleteDateFilter({...completeDateFilter, mode: 'range'})}
+                                  disabled={isCompletingTasks}
+                                />
+                                Date range
+                              </label>
+                            </div>
+                            {completeDateFilter.mode === 'range' ? (
+                              <div style={{display: 'flex', gap: '10px', alignItems: 'center'}}>
+                                <input
+                                  type="date"
+                                  value={completeDateFilter.dateStart}
+                                  onChange={(e) => setCompleteDateFilter({...completeDateFilter, dateStart: e.target.value})}
+                                  className="date-picker"
+                                  disabled={isCompletingTasks}
+                                />
+                                <span>to</span>
+                                <input
+                                  type="date"
+                                  value={completeDateFilter.dateEnd}
+                                  onChange={(e) => setCompleteDateFilter({...completeDateFilter, dateEnd: e.target.value})}
+                                  className="date-picker"
+                                  disabled={isCompletingTasks}
+                                />
+                              </div>
+                            ) : (
+                              <input
+                                type="date"
+                                value={completeDateFilter.date}
+                                onChange={(e) => setCompleteDateFilter({...completeDateFilter, date: e.target.value})}
+                                className="date-picker"
+                                disabled={isCompletingTasks}
+                              />
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Filtered Tasks Display */}
+                {completeTasksList && (() => {
+                  const pageData = getCompletePageData();
+                  return (
+                    <>
+                      {pageData.totalTasks > 0 ? (
+                        <div className="filtered-tasks-section">
+                          <h4>Tasks to Complete ({pageData.totalTasks} found)</h4>
+                          <p className="section-description">
+                            Select tasks to mark as complete. Tasks will be processed serially with verification.
+                          </p>
+
+                          {/* Selection Controls */}
+                          <div className="selection-controls-section">
+                            <div className="selection-buttons">
+                              <button
+                                onClick={() => setCompleteSelectedTasks(pageData.tasks.map(t => t.id))}
+                                className="select-all-btn"
+                                disabled={isCompletingTasks}
+                              >
+                                Select All on Page
+                              </button>
+                              <button
+                                onClick={() => setCompleteSelectedTasks([])}
+                                className="clear-all-btn"
+                                disabled={isCompletingTasks}
+                              >
+                                Clear Selection
+                              </button>
+                            </div>
+                            <p style={{marginTop: '8px', fontSize: '0.875rem', color: '#6b7280'}}>
+                              {completeSelectedTasks.length} task(s) selected
+                            </p>
+                          </div>
+
+                          {/* Task List */}
+                          <div className="task-list-container">
+                            {pageData.tasks.map(task => (
+                              <div key={task.id} className="task-item">
+                                <label className="task-checkbox">
+                                  <input
+                                    type="checkbox"
+                                    checked={completeSelectedTasks.includes(task.id)}
+                                    onChange={(e) => {
+                                      if (e.target.checked) {
+                                        setCompleteSelectedTasks([...completeSelectedTasks, task.id]);
+                                      } else {
+                                        setCompleteSelectedTasks(completeSelectedTasks.filter(id => id !== task.id));
+                                      }
+                                    }}
+                                    disabled={isCompletingTasks}
+                                  />
+                                  <div>
+                                    <span className="task-title">{task.title}</span>
+                                    {task.notes && <div className="task-notes">{task.notes}</div>}
+                                    {task.due && (
+                                      <span className="task-due-date">
+                                        Due: {new Date(task.due).toLocaleDateString()}
+                                      </span>
+                                    )}
+                                  </div>
+                                </label>
+                              </div>
+                            ))}
+                          </div>
+
+                          {/* Pagination */}
+                          {pageData.totalPages > 1 && (
+                            <div style={{marginTop: '1rem', display: 'flex', justifyContent: 'center', gap: '0.5rem'}}>
+                              <button
+                                onClick={() => setCompleteCurrentPage(Math.max(1, completeCurrentPage - 1))}
+                                disabled={completeCurrentPage === 1 || isCompletingTasks}
+                                className="select-btn"
+                              >
+                                Previous
+                              </button>
+                              <span style={{padding: '0.5rem', color: '#374151'}}>
+                                Page {pageData.currentPage} of {pageData.totalPages}
+                              </span>
+                              <button
+                                onClick={() => setCompleteCurrentPage(Math.min(pageData.totalPages, completeCurrentPage + 1))}
+                                disabled={completeCurrentPage === pageData.totalPages || isCompletingTasks}
+                                className="select-btn"
+                              >
+                                Next
+                              </button>
+                            </div>
+                          )}
+
+                          {/* Mark Complete Button */}
+                          <div style={{marginTop: '1.5rem'}}>
+                            <button
+                              onClick={markTasksComplete}
+                              disabled={completeSelectedTasks.length === 0 || isCompletingTasks}
+                              className="assign-btn"
+                              style={{width: '100%'}}
+                            >
+                              {isCompletingTasks ? 'Marking Tasks Complete...' : `Mark ${completeSelectedTasks.length} Task(s) as Complete`}
+                            </button>
+                          </div>
+
+                          {/* Progress Section */}
+                          {isCompletingTasks && (
+                            <div className="progress-section" style={{marginTop: '1rem'}}>
+                              <div className="progress-bar">
+                                <div
+                                  className="progress-fill"
+                                  style={{
+                                    width: `${(completeProgress.current / completeProgress.total) * 100}%`
+                                  }}
+                                />
+                              </div>
+                              <p className="progress-text">
+                                {completeStatus} ({completeProgress.current}/{completeProgress.total})
+                              </p>
+                            </div>
+                          )}
+
+                          {/* Status Message */}
+                          {completeStatus && !isCompletingTasks && (
+                            <div className="status-message" style={{marginTop: '1rem'}}>
+                              <p>{completeStatus}</p>
+                            </div>
+                          )}
+                        </div>
+                      ) : (
+                        <div className="empty-list-message">
+                          <p>No incomplete tasks found matching your criteria.</p>
+                        </div>
+                      )}
+                    </>
+                  );
+                })()}
+
+                {!completeTasksList && (
+                  <div className="empty-list-message">
+                    <p>Please select a task list to begin.</p>
+                  </div>
+                )}
+              </>
+            ) : (
+              <p>Please sign in to use the complete tasks feature.</p>
+            )}
+          </div>
+        );
+
       default:
         return (
           <div className="tab-content">
@@ -4491,7 +5180,7 @@ function App() {
                 onClick={() => setActiveTab(tabNumber)}
                 className={`tab ${activeTab === tabNumber ? 'active' : ''}`}
               >
-                {tabNumber === 1 ? 'Bulk Insert' : tabNumber === 2 ? 'Bulk Set Notes' : tabNumber === 3 ? 'Automatic Notes Entry' : tabNumber === 4 ? 'Due Date' : tabNumber === 5 ? 'Bulk Move' : tabNumber === 6 ? 'Subtasks' : tabNumber === 7 ? 'YouTube List' : `Tab ${tabNumber}`}
+                {tabNumber === 1 ? 'Bulk Insert' : tabNumber === 2 ? 'Bulk Set Notes' : tabNumber === 3 ? 'Automatic Notes Entry' : tabNumber === 4 ? 'Due Date' : tabNumber === 5 ? 'Bulk Move' : tabNumber === 6 ? 'Subtasks' : tabNumber === 7 ? 'YouTube List' : tabNumber === 8 ? 'Complete Tasks' : `Tab ${tabNumber}`}
               </button>
             ))}
           </div>
