@@ -4995,11 +4995,11 @@ function App() {
                           <div className="selection-controls-section">
                             <div className="selection-buttons">
                               <button
-                                onClick={() => setCompleteSelectedTasks(pageData.tasks.map(t => t.id))}
+                                onClick={() => setCompleteSelectedTasks(filterAndSortCompleteTasks().map(t => t.id))}
                                 className="select-all-btn"
                                 disabled={isCompletingTasks}
                               >
-                                Select All on Page
+                                Select All
                               </button>
                               <button
                                 onClick={() => setCompleteSelectedTasks([])}

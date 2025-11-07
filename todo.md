@@ -43,3 +43,4 @@
 - [x] Add rate limiting and pagination handling for large lists (6k+ tasks)
 - [x] Add progress bars and loading indicators
 - [x] Rename Tab 8 from "Complete Tasks" to "Bulk Complete"
+- [x] Change "Select All on Page" to "Select All" to select all filtered tasks in Bulk Complete tab
