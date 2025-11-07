@@ -213,8 +213,8 @@ function App() {
                       console.log('Token refreshed successfully', authResponse);
                     }).catch((error) => {
                       console.error('Token refresh failed:', error);
-                      // If refresh fails, sign out and prompt user to sign in again
-                      authInstance.signOut();
+                      // If refresh fails, just update the sign-in status indicator
+                      setIsSignedIn(false);
                     });
                   }
                 }
@@ -277,20 +277,14 @@ function App() {
             }
           }
         } else {
-          // If not signed in or can't refresh, sign out
-          console.log('Cannot refresh token, signing out...');
-          if (authInstance) {
-            await authInstance.signOut();
-          }
-          alert('Your session has expired. Please sign in again.');
+          // If not signed in or can't refresh, just update the status indicator
+          console.log('Cannot refresh token, updating sign-in status...');
+          setIsSignedIn(false);
         }
       } catch (refreshError) {
         console.error('Token refresh failed:', refreshError);
-        const authInstance = window.gapi?.auth2?.getAuthInstance();
-        if (authInstance) {
-          await authInstance.signOut();
-        }
-        alert('Your session has expired. Please sign in again.');
+        // Just update the sign-in status indicator, don't force sign-out
+        setIsSignedIn(false);
       }
     }
     
