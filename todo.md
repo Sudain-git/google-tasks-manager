@@ -26,3 +26,4 @@
 
 ## UI Polish
 - [x] Add vertical spacing between due date filter checkbox and radio buttons in Bulk Move tab
+- [x] Add top spacing between tabs and container edge
