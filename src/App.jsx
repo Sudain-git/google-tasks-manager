@@ -3626,7 +3626,7 @@ function App() {
                       </label>
                       
                       {bulkMoveDateFilter.enabled && (
-                        <div className="date-filter-controls">
+                        <div className="date-filter-controls" style={{ marginTop: '12px' }}>
                           {/* Mode Selection */}
                           <div className="filter-mode-row">
                             <label style={{ marginRight: '15px' }}>

@@ -23,3 +23,6 @@
 
 ## Bug Fixes
 - [x] Fix tabs showing dropdowns when not signed in (Due Date, Bulk Move, Subtasks, YouTube List now show sign-in message)
+
+## UI Polish
+- [x] Add vertical spacing between due date filter checkbox and radio buttons in Bulk Move tab
