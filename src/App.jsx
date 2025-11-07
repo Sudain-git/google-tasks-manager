@@ -2745,7 +2745,8 @@ function App() {
         return (
           <div className="tab-content">
             <h2>Due Date Management</h2>
-
+            {isSignedIn ? (
+              <>
             {/* Task List Selection */}
             <div className="task-list-selection-section">
               <h4>Select Task List</h4>
@@ -3264,13 +3265,18 @@ function App() {
                 </div>
               </div>
             )}
+            </>
+            ) : (
+              <p>Please sign in to use the due date management feature.</p>
+            )}
           </div>
         );
       case 5:
         return (
           <div className="tab-content">
             <h2>Bulk Move Tasks</h2>
-            
+            {isSignedIn ? (
+              <>
             {/* Task List Selection */}
             <div className="task-list-selection-section">
               <h4>Select Task Lists</h4>
@@ -3905,13 +3911,18 @@ function App() {
             ) : (
               <p className="instruction-text">Please select a source task list to begin.</p>
             )}
+            </>
+            ) : (
+              <p>Please sign in to use the bulk move feature.</p>
+            )}
           </div>
         );
       case 6:
         return (
           <div className="tab-content">
             <h2>Subtasks Management</h2>
-
+            {isSignedIn ? (
+              <>
             {/* Task List Selection */}
             <div className="task-list-selection-section">
               <h4>Select Task List</h4>
@@ -4243,6 +4254,10 @@ function App() {
                 )}
               </>
             )}
+            </>
+            ) : (
+              <p>Please sign in to use the subtasks management feature.</p>
+            )}
           </div>
         );
 
@@ -4250,7 +4265,8 @@ function App() {
         return (
           <div className="tab-content">
             <h2>YouTube List to Task</h2>
-
+            {isSignedIn ? (
+              <>
             {/* Destination Task List Selection */}
             <div className="task-list-selection-section">
               <h4>Select Destination Task List</h4>
@@ -4341,6 +4357,10 @@ function App() {
                 </div>
               )}
             </div>
+            </>
+            ) : (
+              <p>Please sign in to use the YouTube list feature.</p>
+            )}
           </div>
         );
 
