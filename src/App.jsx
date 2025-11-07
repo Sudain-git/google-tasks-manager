@@ -900,6 +900,18 @@ function App() {
           return parseInt(a.position) - parseInt(b.position);
         case 'creation-desc':
           return parseInt(b.position) - parseInt(a.position);
+        case 'duedate':
+          // Tasks without due dates go to the end
+          if (!a.due && !b.due) return 0;
+          if (!a.due) return 1;
+          if (!b.due) return -1;
+          return new Date(a.due) - new Date(b.due);
+        case 'duedate-desc':
+          // Tasks without due dates go to the end
+          if (!a.due && !b.due) return 0;
+          if (!a.due) return 1;
+          if (!b.due) return -1;
+          return new Date(b.due) - new Date(a.due);
         default:
           return 0;
       }
@@ -1440,6 +1452,18 @@ function App() {
           return parseInt(a.position) - parseInt(b.position);
         case 'creation-desc':
           return parseInt(b.position) - parseInt(a.position);
+        case 'duedate':
+          // Tasks without due dates go to the end
+          if (!a.due && !b.due) return 0;
+          if (!a.due) return 1;
+          if (!b.due) return -1;
+          return new Date(a.due) - new Date(b.due);
+        case 'duedate-desc':
+          // Tasks without due dates go to the end
+          if (!a.due && !b.due) return 0;
+          if (!a.due) return 1;
+          if (!b.due) return -1;
+          return new Date(b.due) - new Date(a.due);
         default:
           return 0;
       }
@@ -3362,6 +3386,8 @@ function App() {
                           <option value="alphabetical-desc">Alphabetical (Z-A)</option>
                           <option value="creation">Creation Order</option>
                           <option value="creation-desc">Creation Order (Reverse)</option>
+                          <option value="duedate">Due Date (Earliest First)</option>
+                          <option value="duedate-desc">Due Date (Latest First)</option>
                         </select>
                       </div>
                       
@@ -3597,7 +3623,7 @@ function App() {
                         <div className="date-filter-controls">
                           {/* Mode Selection */}
                           <div className="filter-mode-row">
-                            <label>
+                            <label style={{ marginRight: '15px' }}>
                               <input
                                 type="radio"
                                 name="bulkMoveDateMode"
@@ -3611,7 +3637,7 @@ function App() {
                               />
                               Exact date
                             </label>
-                            <label>
+                            <label style={{ marginRight: '15px' }}>
                               <input
                                 type="radio"
                                 name="bulkMoveDateMode"
@@ -3625,7 +3651,7 @@ function App() {
                               />
                               On or before
                             </label>
-                            <label>
+                            <label style={{ marginRight: '15px' }}>
                               <input
                                 type="radio"
                                 name="bulkMoveDateMode"
@@ -3639,7 +3665,7 @@ function App() {
                               />
                               On or after
                             </label>
-                            <label>
+                            <label style={{ marginRight: '15px' }}>
                               <input
                                 type="radio"
                                 name="bulkMoveDateMode"
