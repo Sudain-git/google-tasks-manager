@@ -31,3 +31,4 @@
 ## Authentication Improvements
 - [x] Add automatic token refresh handling to prevent session timeouts during long usage
 - [x] Update token refresh failure to only update sign-in status indicator instead of forcing sign-out
+- [x] Fix inconsistent tab button heights to make them uniform

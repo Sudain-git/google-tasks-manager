@@ -4484,7 +4484,7 @@ function App() {
 
       <main className="main">
         <div className="tabs-container">
-          <div className="tabs-header" style={{ paddingTop: '16px' }}>
+          <div className="tabs-header" style={{ paddingTop: '16px', height: '136px' }}>
             {tabs.map(tabNumber => (
               <button
                 key={tabNumber}
