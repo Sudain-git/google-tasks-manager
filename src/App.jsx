@@ -4778,7 +4778,7 @@ function App() {
       case 8:
         return (
           <div className="tab-content">
-            <h2>Complete Tasks</h2>
+            <h2>Bulk Complete</h2>
             {isSignedIn ? (
               <>
                 {/* Task List Selection */}
@@ -5120,7 +5120,7 @@ function App() {
                 )}
               </>
             ) : (
-              <p>Please sign in to use the complete tasks feature.</p>
+              <p>Please sign in to use the bulk complete feature.</p>
             )}
           </div>
         );
@@ -5180,7 +5180,7 @@ function App() {
                 onClick={() => setActiveTab(tabNumber)}
                 className={`tab ${activeTab === tabNumber ? 'active' : ''}`}
               >
-                {tabNumber === 1 ? 'Bulk Insert' : tabNumber === 2 ? 'Bulk Set Notes' : tabNumber === 3 ? 'Automatic Notes Entry' : tabNumber === 4 ? 'Due Date' : tabNumber === 5 ? 'Bulk Move' : tabNumber === 6 ? 'Subtasks' : tabNumber === 7 ? 'YouTube List' : tabNumber === 8 ? 'Complete Tasks' : `Tab ${tabNumber}`}
+                {tabNumber === 1 ? 'Bulk Insert' : tabNumber === 2 ? 'Bulk Set Notes' : tabNumber === 3 ? 'Automatic Notes Entry' : tabNumber === 4 ? 'Due Date' : tabNumber === 5 ? 'Bulk Move' : tabNumber === 6 ? 'Subtasks' : tabNumber === 7 ? 'YouTube List' : tabNumber === 8 ? 'Bulk Complete' : `Tab ${tabNumber}`}
               </button>
             ))}
           </div>
