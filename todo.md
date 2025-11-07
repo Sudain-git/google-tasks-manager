@@ -22,4 +22,4 @@
 - [x] Add due date sorting to Sort by dropdown in Bulk Move tab
 
 ## Bug Fixes
-- [ ] Fix tabs showing dropdowns when not signed in (Due Date, Bulk Move, Subtasks, YouTube List should show sign-in message like Bulk Insert)
+- [x] Fix tabs showing dropdowns when not signed in (Due Date, Bulk Move, Subtasks, YouTube List now show sign-in message)
