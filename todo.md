@@ -16,3 +16,10 @@
 
 ## Planned Features
 (none)
+
+## New Improvements
+- [x] Add spacing between date filter radio buttons in Bulk Move tab
+- [x] Add due date sorting to Sort by dropdown in Bulk Move tab
+
+## Bug Fixes
+- [ ] Fix tabs showing dropdowns when not signed in (Due Date, Bulk Move, Subtasks, YouTube List should show sign-in message like Bulk Insert)

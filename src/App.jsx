@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+// import './App.css'; // CSS removed
 
 // Configuration - Google API credentials
 const CLIENT_ID = '367863809541-6j28nl498c3nu8lsea72v5ie9ovee0mh.apps.googleusercontent.com';
@@ -113,7 +114,10 @@ function App() {
   });
   const [bulkMoveDateFilter, setBulkMoveDateFilter] = useState({
     enabled: false,
-    date: ''
+    mode: 'exact', // 'exact', 'before', 'after', 'range'
+    date: '', // for exact, before, after modes
+    dateStart: '', // for range mode
+    dateEnd: '' // for range mode
   });
   const [bulkMoveShowDuplicates, setBulkMoveShowDuplicates] = useState(false);
   const [bulkMoveSortField, setBulkMoveSortField] = useState('title'); // 'title' or 'notes'
@@ -896,6 +900,18 @@ function App() {
           return parseInt(a.position) - parseInt(b.position);
         case 'creation-desc':
           return parseInt(b.position) - parseInt(a.position);
+        case 'duedate':
+          // Tasks without due dates go to the end
+          if (!a.due && !b.due) return 0;
+          if (!a.due) return 1;
+          if (!b.due) return -1;
+          return new Date(a.due) - new Date(b.due);
+        case 'duedate-desc':
+          // Tasks without due dates go to the end
+          if (!a.due && !b.due) return 0;
+          if (!a.due) return 1;
+          if (!b.due) return -1;
+          return new Date(b.due) - new Date(a.due);
         default:
           return 0;
       }
@@ -1384,17 +1400,44 @@ function App() {
     });
 
     // Apply date filter
-    if (bulkMoveDateFilter.enabled && bulkMoveDateFilter.date) {
-      const filterDate = new Date(bulkMoveDateFilter.date);
-      filterDate.setHours(0, 0, 0, 0); // Normalize to start of day
-      
+    if (bulkMoveDateFilter.enabled) {
       filtered = filtered.filter(task => {
         if (!task.due) return false; // Exclude tasks without due date
         
         const taskDate = new Date(task.due);
         taskDate.setHours(0, 0, 0, 0); // Normalize to start of day
+        const taskTime = taskDate.getTime();
         
-        return taskDate.getTime() === filterDate.getTime();
+        switch (bulkMoveDateFilter.mode) {
+          case 'exact':
+            if (!bulkMoveDateFilter.date) return true;
+            const filterDate = new Date(bulkMoveDateFilter.date);
+            filterDate.setHours(0, 0, 0, 0);
+            return taskTime === filterDate.getTime();
+            
+          case 'before':
+            if (!bulkMoveDateFilter.date) return true;
+            const beforeDate = new Date(bulkMoveDateFilter.date);
+            beforeDate.setHours(0, 0, 0, 0);
+            return taskTime <= beforeDate.getTime();
+            
+          case 'after':
+            if (!bulkMoveDateFilter.date) return true;
+            const afterDate = new Date(bulkMoveDateFilter.date);
+            afterDate.setHours(0, 0, 0, 0);
+            return taskTime >= afterDate.getTime();
+            
+          case 'range':
+            if (!bulkMoveDateFilter.dateStart || !bulkMoveDateFilter.dateEnd) return true;
+            const startDate = new Date(bulkMoveDateFilter.dateStart);
+            startDate.setHours(0, 0, 0, 0);
+            const endDate = new Date(bulkMoveDateFilter.dateEnd);
+            endDate.setHours(0, 0, 0, 0);
+            return taskTime >= startDate.getTime() && taskTime <= endDate.getTime();
+            
+          default:
+            return true;
+        }
       });
     }
 
@@ -1409,6 +1452,18 @@ function App() {
           return parseInt(a.position) - parseInt(b.position);
         case 'creation-desc':
           return parseInt(b.position) - parseInt(a.position);
+        case 'duedate':
+          // Tasks without due dates go to the end
+          if (!a.due && !b.due) return 0;
+          if (!a.due) return 1;
+          if (!b.due) return -1;
+          return new Date(a.due) - new Date(b.due);
+        case 'duedate-desc':
+          // Tasks without due dates go to the end
+          if (!a.due && !b.due) return 0;
+          if (!a.due) return 1;
+          if (!b.due) return -1;
+          return new Date(b.due) - new Date(a.due);
         default:
           return 0;
       }
@@ -3331,6 +3386,8 @@ function App() {
                           <option value="alphabetical-desc">Alphabetical (Z-A)</option>
                           <option value="creation">Creation Order</option>
                           <option value="creation-desc">Creation Order (Reverse)</option>
+                          <option value="duedate">Due Date (Earliest First)</option>
+                          <option value="duedate-desc">Due Date (Latest First)</option>
                         </select>
                       </div>
                       
@@ -3563,17 +3620,111 @@ function App() {
                       </label>
                       
                       {bulkMoveDateFilter.enabled && (
-                        <div className="date-picker-container">
-                          <input
-                            type="date"
-                            value={bulkMoveDateFilter.date}
-                            onChange={(e) => setBulkMoveDateFilter({
-                              ...bulkMoveDateFilter,
-                              date: e.target.value
-                            })}
-                            disabled={isMovingTasks}
-                            className="form-input date-picker"
-                          />
+                        <div className="date-filter-controls">
+                          {/* Mode Selection */}
+                          <div className="filter-mode-row">
+                            <label style={{ marginRight: '15px' }}>
+                              <input
+                                type="radio"
+                                name="bulkMoveDateMode"
+                                value="exact"
+                                checked={bulkMoveDateFilter.mode === 'exact'}
+                                onChange={(e) => setBulkMoveDateFilter({
+                                  ...bulkMoveDateFilter,
+                                  mode: e.target.value
+                                })}
+                                disabled={isMovingTasks}
+                              />
+                              Exact date
+                            </label>
+                            <label style={{ marginRight: '15px' }}>
+                              <input
+                                type="radio"
+                                name="bulkMoveDateMode"
+                                value="before"
+                                checked={bulkMoveDateFilter.mode === 'before'}
+                                onChange={(e) => setBulkMoveDateFilter({
+                                  ...bulkMoveDateFilter,
+                                  mode: e.target.value
+                                })}
+                                disabled={isMovingTasks}
+                              />
+                              On or before
+                            </label>
+                            <label style={{ marginRight: '15px' }}>
+                              <input
+                                type="radio"
+                                name="bulkMoveDateMode"
+                                value="after"
+                                checked={bulkMoveDateFilter.mode === 'after'}
+                                onChange={(e) => setBulkMoveDateFilter({
+                                  ...bulkMoveDateFilter,
+                                  mode: e.target.value
+                                })}
+                                disabled={isMovingTasks}
+                              />
+                              On or after
+                            </label>
+                            <label style={{ marginRight: '15px' }}>
+                              <input
+                                type="radio"
+                                name="bulkMoveDateMode"
+                                value="range"
+                                checked={bulkMoveDateFilter.mode === 'range'}
+                                onChange={(e) => setBulkMoveDateFilter({
+                                  ...bulkMoveDateFilter,
+                                  mode: e.target.value
+                                })}
+                                disabled={isMovingTasks}
+                              />
+                              Date range
+                            </label>
+                          </div>
+
+                          {/* Date Input(s) */}
+                          {bulkMoveDateFilter.mode === 'range' ? (
+                            <div className="date-range-inputs">
+                              <div className="date-input-group">
+                                <label>From:</label>
+                                <input
+                                  type="date"
+                                  value={bulkMoveDateFilter.dateStart}
+                                  onChange={(e) => setBulkMoveDateFilter({
+                                    ...bulkMoveDateFilter,
+                                    dateStart: e.target.value
+                                  })}
+                                  disabled={isMovingTasks}
+                                  className="form-input date-picker"
+                                />
+                              </div>
+                              <div className="date-input-group">
+                                <label>To:</label>
+                                <input
+                                  type="date"
+                                  value={bulkMoveDateFilter.dateEnd}
+                                  onChange={(e) => setBulkMoveDateFilter({
+                                    ...bulkMoveDateFilter,
+                                    dateEnd: e.target.value
+                                  })}
+                                  disabled={isMovingTasks}
+                                  className="form-input date-picker"
+                                />
+                              </div>
+                            </div>
+                          ) : (
+                            <div className="date-picker-container">
+                              <input
+                                type="date"
+                                value={bulkMoveDateFilter.date}
+                                onChange={(e) => setBulkMoveDateFilter({
+                                  ...bulkMoveDateFilter,
+                                  date: e.target.value
+                                })}
+                                disabled={isMovingTasks}
+                                className="form-input date-picker"
+                              />
+                            </div>
+                          )}
                         </div>
                       )}
                     </div>
@@ -4263,3 +4414,4 @@ function App() {
 }
 
 export default App;
+// Force rebuild Fri Nov  7 10:55:30 EST 2025
