@@ -27,3 +27,8 @@
 ## UI Polish
 - [x] Add vertical spacing between due date filter checkbox and radio buttons in Bulk Move tab
 - [x] Add top spacing between tabs and container edge
+
+## Authentication Improvements
+- [x] Add automatic token refresh handling to prevent session timeouts during long usage
+- [x] Update token refresh failure to only update sign-in status indicator instead of forcing sign-out
+- [x] Fix inconsistent tab button heights to make them uniform

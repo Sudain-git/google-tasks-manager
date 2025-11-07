@@ -203,6 +203,25 @@ function App() {
               // Listen for sign-in state changes
               authInstance.isSignedIn.listen(setIsSignedIn);
               console.log('Auth instance ready, signed in:', authInstance.isSignedIn.get());
+              
+              // Set up automatic token refresh every 45 minutes
+              const refreshInterval = setInterval(() => {
+                if (authInstance.isSignedIn.get()) {
+                  const currentUser = authInstance.currentUser.get();
+                  if (currentUser) {
+                    currentUser.reloadAuthResponse().then((authResponse) => {
+                      console.log('Token refreshed successfully', authResponse);
+                    }).catch((error) => {
+                      console.error('Token refresh failed:', error);
+                      // If refresh fails, just update the sign-in status indicator
+                      setIsSignedIn(false);
+                    });
+                  }
+                }
+              }, 45 * 60 * 1000); // 45 minutes
+              
+              // Store interval ID for cleanup
+              window.tokenRefreshInterval = refreshInterval;
             }
             
             setIsInitialized(true);
@@ -226,8 +245,51 @@ function App() {
 
     initializeGapi();
 
-    return () => clearTimeout(timeout);
+    return () => {
+      clearTimeout(timeout);
+      // Clean up token refresh interval
+      if (window.tokenRefreshInterval) {
+        clearInterval(window.tokenRefreshInterval);
+      }
+    };
   }, []);
+
+  // Helper function to handle API errors and token refresh
+  const handleApiError = async (error, retryFunction) => {
+    console.error('API Error:', error);
+    
+    // Check if error is 401 (Unauthorized) or token-related
+    if (error.status === 401 || error.result?.error?.code === 401) {
+      console.log('Token expired or invalid, attempting to refresh...');
+      
+      try {
+        const authInstance = window.gapi?.auth2?.getAuthInstance();
+        if (authInstance && authInstance.isSignedIn.get()) {
+          const currentUser = authInstance.currentUser.get();
+          if (currentUser) {
+            // Force token refresh
+            await currentUser.reloadAuthResponse();
+            console.log('Token refreshed, retrying operation...');
+            
+            // Retry the failed operation if retry function provided
+            if (retryFunction) {
+              return await retryFunction();
+            }
+          }
+        } else {
+          // If not signed in or can't refresh, just update the status indicator
+          console.log('Cannot refresh token, updating sign-in status...');
+          setIsSignedIn(false);
+        }
+      } catch (refreshError) {
+        console.error('Token refresh failed:', refreshError);
+        // Just update the sign-in status indicator, don't force sign-out
+        setIsSignedIn(false);
+      }
+    }
+    
+    throw error; // Re-throw if not handled
+  };
 
   // Load task lists when user signs in
   useEffect(() => {
@@ -334,7 +396,7 @@ function App() {
       return;
     }
     
-    try {
+    const executeLoad = async () => {
       console.log('Loading task lists...');
       const response = await window.gapi.client.tasks.tasklists.list();
       const lists = response.result.items || [];
@@ -352,9 +414,19 @@ function App() {
       }
       
       console.log('Task lists loaded:', lists.length);
+      return lists;
+    };
+    
+    try {
+      await executeLoad();
     } catch (error) {
-      console.error('Error loading task lists:', error);
-      setInsertStatus('Failed to load task lists: ' + error.message);
+      try {
+        // Try to handle error and retry
+        await handleApiError(error, executeLoad);
+      } catch (retryError) {
+        console.error('Error loading task lists after retry:', retryError);
+        setInsertStatus('Failed to load task lists: ' + retryError.message);
+      }
     }
   };
 
@@ -4412,7 +4484,7 @@ function App() {
 
       <main className="main">
         <div className="tabs-container">
-          <div className="tabs-header" style={{ paddingTop: '16px' }}>
+          <div className="tabs-header" style={{ paddingTop: '16px', height: '136px' }}>
             {tabs.map(tabNumber => (
               <button
                 key={tabNumber}
