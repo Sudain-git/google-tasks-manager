@@ -437,12 +437,10 @@ function App() {
     };
     
     try {
-      await safeApiCall(executeLoad);
+      await executeLoad();
     } catch (error) {
       console.error('Error loading task lists:', error);
-      if (error.message !== 'Token expired') {
-        setInsertStatus('Failed to load task lists: ' + error.message);
-      }
+      setInsertStatus('Failed to load task lists: ' + error.message);
     }
   };
 

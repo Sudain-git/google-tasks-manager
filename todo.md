@@ -48,3 +48,4 @@
 - [x] Implement smart token refresh on user interaction (Option 2)
 - [x] Add ensureValidToken helper function
 - [x] Wrap API calls with token validation
+- [x] Fix ensureValidToken being called during initial sign-in (causing false "session expired" message)
