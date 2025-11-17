@@ -1646,13 +1646,6 @@ function App() {
     // Validation is now handled by button disabled state
     // No popups needed
     
-    // Check token validity before starting
-    const tokenValid = await ensureValidToken();
-    if (!tokenValid) {
-      alert('Your session has expired. Please sign in again.');
-      return;
-    }
-    
     setIsMovingTasks(true);
     setMoveProgress({ current: 0, total: bulkMoveSelectedTasks.length });
     setMoveStatus('Starting task move...');
@@ -2098,13 +2091,6 @@ function App() {
   const markTasksComplete = async () => {
     if (completeSelectedTasks.length === 0) return;
 
-    // Check token validity before starting
-    const tokenValid = await ensureValidToken();
-    if (!tokenValid) {
-      alert('Your session has expired. Please sign in again.');
-      return;
-    }
-
     setIsCompletingTasks(true);
     setCompleteProgress({ current: 0, total: completeSelectedTasks.length });
     setCompleteStatus('Starting to mark tasks as complete...');
@@ -2211,13 +2197,6 @@ function App() {
 
     if (taskLines.length === 0) {
       alert('Please enter at least one task.');
-      return;
-    }
-
-    // Check token validity before starting
-    const tokenValid = await ensureValidToken();
-    if (!tokenValid) {
-      alert('Your session has expired. Please sign in again.');
       return;
     }
 
