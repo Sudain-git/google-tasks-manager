@@ -284,6 +284,45 @@ function App() {
     }
   }, [isSignedIn]);
 
+  // Smart token refresh - check and refresh token only when user takes action
+  const ensureValidToken = async () => {
+    const authInstance = window.gapi?.auth2?.getAuthInstance();
+    if (!authInstance || !authInstance.isSignedIn.get()) {
+      setIsSignedIn(false);
+      return false;
+    }
+    
+    try {
+      const currentUser = authInstance.currentUser.get();
+      const authResponse = currentUser.getAuthResponse(true);
+      const expiresAt = authResponse.expires_at;
+      const now = Date.now();
+      
+      // If token expires in less than 5 minutes, refresh it
+      if (expiresAt < (now + 5 * 60 * 1000)) {
+        console.log('Token expiring soon, refreshing...');
+        await currentUser.reloadAuthResponse();
+        console.log('Token refreshed successfully');
+      }
+      
+      return true;
+    } catch (error) {
+      console.error('Token validation/refresh failed:', error);
+      setIsSignedIn(false);
+      return false;
+    }
+  };
+
+  // Wrapper for API calls that ensures token is valid
+  const safeApiCall = async (apiFunction, errorMessage = 'Your session has expired. Please sign in again.') => {
+    const tokenValid = await ensureValidToken();
+    if (!tokenValid) {
+      alert(errorMessage);
+      throw new Error('Token expired');
+    }
+    return await apiFunction();
+  };
+
   const handleSignIn = async () => {
     try {
       console.log('Sign in button clicked');
@@ -398,10 +437,12 @@ function App() {
     };
     
     try {
-      await executeLoad();
+      await safeApiCall(executeLoad);
     } catch (error) {
       console.error('Error loading task lists:', error);
-      setInsertStatus('Failed to load task lists: ' + error.message);
+      if (error.message !== 'Token expired') {
+        setInsertStatus('Failed to load task lists: ' + error.message);
+      }
     }
   };
 
@@ -1594,6 +1635,13 @@ function App() {
     // Validation is now handled by button disabled state
     // No popups needed
     
+    // Check token validity before starting
+    const tokenValid = await ensureValidToken();
+    if (!tokenValid) {
+      alert('Your session has expired. Please sign in again.');
+      return;
+    }
+    
     setIsMovingTasks(true);
     setMoveProgress({ current: 0, total: bulkMoveSelectedTasks.length });
     setMoveStatus('Starting task move...');
@@ -2039,6 +2087,13 @@ function App() {
   const markTasksComplete = async () => {
     if (completeSelectedTasks.length === 0) return;
 
+    // Check token validity before starting
+    const tokenValid = await ensureValidToken();
+    if (!tokenValid) {
+      alert('Your session has expired. Please sign in again.');
+      return;
+    }
+
     setIsCompletingTasks(true);
     setCompleteProgress({ current: 0, total: completeSelectedTasks.length });
     setCompleteStatus('Starting to mark tasks as complete...');
@@ -2145,6 +2200,13 @@ function App() {
 
     if (taskLines.length === 0) {
       alert('Please enter at least one task.');
+      return;
+    }
+
+    // Check token validity before starting
+    const tokenValid = await ensureValidToken();
+    if (!tokenValid) {
+      alert('Your session has expired. Please sign in again.');
       return;
     }
 

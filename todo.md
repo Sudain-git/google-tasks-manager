@@ -45,3 +45,6 @@
 - [x] Rename Tab 8 from "Complete Tasks" to "Bulk Complete"
 - [x] Change "Select All on Page" to "Select All" to select all filtered tasks in Bulk Complete tab
 - [x] Remove automatic token refresh functionality (causing problems)
+- [x] Implement smart token refresh on user interaction (Option 2)
+- [x] Add ensureValidToken helper function
+- [x] Wrap API calls with token validation
