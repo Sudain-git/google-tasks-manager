@@ -49,3 +49,4 @@
 - [x] Add ensureValidToken helper function
 - [x] Wrap API calls with token validation
 - [x] Fix ensureValidToken being called during initial sign-in (causing false "session expired" message)
+- [x] Fix ensureValidToken failing during bulk complete (false "session expired" message)

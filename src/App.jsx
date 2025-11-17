@@ -288,13 +288,24 @@ function App() {
   const ensureValidToken = async () => {
     const authInstance = window.gapi?.auth2?.getAuthInstance();
     if (!authInstance || !authInstance.isSignedIn.get()) {
+      console.log('ensureValidToken: Not signed in or no auth instance');
       setIsSignedIn(false);
       return false;
     }
     
     try {
       const currentUser = authInstance.currentUser.get();
+      if (!currentUser) {
+        console.log('ensureValidToken: No current user');
+        return true; // Assume valid if we can't check
+      }
+      
       const authResponse = currentUser.getAuthResponse(true);
+      if (!authResponse || !authResponse.expires_at) {
+        console.log('ensureValidToken: No auth response or expires_at, assuming valid');
+        return true; // Assume valid if we can't get expiration
+      }
+      
       const expiresAt = authResponse.expires_at;
       const now = Date.now();
       
@@ -308,8 +319,10 @@ function App() {
       return true;
     } catch (error) {
       console.error('Token validation/refresh failed:', error);
-      setIsSignedIn(false);
-      return false;
+      // Don't set isSignedIn to false on error - just allow the API call to proceed
+      // The API call itself will fail if the token is actually invalid
+      console.log('Proceeding with API call despite token check error');
+      return true;
     }
   };
 
