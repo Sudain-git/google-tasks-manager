@@ -254,41 +254,25 @@ function App() {
     };
   }, []);
 
-  // Helper function to handle API errors and token refresh
-  const handleApiError = async (error, retryFunction) => {
+  // Helper function to handle API errors and detect expired tokens
+  const handleApiError = (error) => {
     console.error('API Error:', error);
     
-    // Check if error is 401 (Unauthorized) or token-related
-    if (error.status === 401 || error.result?.error?.code === 401) {
-      console.log('Token expired or invalid, attempting to refresh...');
-      
-      try {
-        const authInstance = window.gapi?.auth2?.getAuthInstance();
-        if (authInstance && authInstance.isSignedIn.get()) {
-          const currentUser = authInstance.currentUser.get();
-          if (currentUser) {
-            // Force token refresh
-            await currentUser.reloadAuthResponse();
-            console.log('Token refreshed, retrying operation...');
-            
-            // Retry the failed operation if retry function provided
-            if (retryFunction) {
-              return await retryFunction();
-            }
-          }
-        } else {
-          // If not signed in or can't refresh, just update the status indicator
-          console.log('Cannot refresh token, updating sign-in status...');
-          setIsSignedIn(false);
-        }
-      } catch (refreshError) {
-        console.error('Token refresh failed:', refreshError);
-        // Just update the sign-in status indicator, don't force sign-out
-        setIsSignedIn(false);
-      }
+    // Check if error is due to expired/invalid token
+    const isAuthError = 
+      error?.status === 401 || 
+      error?.status === 403 ||
+      error?.result?.error?.code === 401 ||
+      error?.result?.error?.code === 403 ||
+      error?.result?.error?.message?.includes('Invalid Credentials');
+    
+    if (isAuthError) {
+      console.log('Token expired or invalid, updating sign-in status');
+      setIsSignedIn(false);
+      alert('Your session has expired. Please sign in again.');
     }
     
-    throw error; // Re-throw if not handled
+    return isAuthError;
   };
 
   // Load task lists when user signs in
@@ -420,12 +404,9 @@ function App() {
     try {
       await executeLoad();
     } catch (error) {
-      try {
-        // Try to handle error and retry
-        await handleApiError(error, executeLoad);
-      } catch (retryError) {
-        console.error('Error loading task lists after retry:', retryError);
-        setInsertStatus('Failed to load task lists: ' + retryError.message);
+      const isAuthError = handleApiError(error);
+      if (!isAuthError) {
+        setInsertStatus('Failed to load task lists: ' + error.message);
       }
     }
   };
@@ -486,7 +467,10 @@ function App() {
       setDueDateTasks(allTasks);
       console.log(`Loaded ${allTasks.length} tasks for due date management`);
     } catch (error) {
-      console.error('Error loading tasks for due date management:', error);
+      const isAuthError = handleApiError(error);
+      if (!isAuthError) {
+        console.error('Error loading tasks for due date management:', error);
+      }
       setDueDateTasks([]);
     } finally {
       setIsLoadingDueDateTasks(false);
@@ -926,8 +910,11 @@ function App() {
         });
       }, 50);
     } catch (error) {
-      console.error('Error loading subtasks tasks:', error);
-      alert('Error loading tasks. Please try again.');
+      const isAuthError = handleApiError(error);
+      if (!isAuthError) {
+        console.error('Error loading subtasks tasks:', error);
+        alert('Error loading tasks. Please try again.');
+      }
     } finally {
       setIsLoadingSubtasksTasks(false);
     }
@@ -1292,8 +1279,11 @@ function App() {
       setBulkMoveCurrentPage(1);
 
     } catch (error) {
-      console.error('Error loading bulk move tasks:', error);
-      alert('Error loading tasks. Please try again.');
+      const isAuthError = handleApiError(error);
+      if (!isAuthError) {
+        console.error('Error loading bulk move tasks:', error);
+        alert('Error loading tasks. Please try again.');
+      }
     } finally {
       setIsLoadingBulkMoveTasks(false);
     }

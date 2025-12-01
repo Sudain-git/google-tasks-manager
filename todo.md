@@ -32,3 +32,8 @@
 - [x] Add automatic token refresh handling to prevent session timeouts during long usage
 - [x] Update token refresh failure to only update sign-in status indicator instead of forcing sign-out
 - [x] Fix inconsistent tab button heights to make them uniform
+
+## Session Timeout Handling
+- [x] Detect API errors caused by expired tokens (401/403 errors)
+- [x] Update isSignedIn state when token expires
+- [x] Show clear message when session expires instead of empty lists
