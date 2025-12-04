@@ -834,38 +834,102 @@ function App() {
 
       const results = [];
       const errors = [];
+      const baseDelay = 200; // Base delay in ms (constant)
+      let variableDelay = 100; // Variable delay in ms (min 100ms)
+      const minVariableDelay = 100;
+      const updatedTasks = []; // Track updated task IDs for verification
 
-      // Process tasks one by one with delay to respect API limits
+      // Process tasks one by one with adaptive delay
       for (let i = 0; i < tasksToProcess.length; i++) {
         const task = tasksToProcess[i];
         const dueDate = dueDates[i];
+        let taskUpdated = false;
         
-        setDueDateAssignmentProgress({ current: i + 1, total: tasksToProcess.length });
-        setDueDateAssignmentStatus(`Updating task ${i + 1} of ${tasksToProcess.length}: ${task.title}`);
+        while (!taskUpdated) {
+          try {
+            const totalDelay = baseDelay + variableDelay;
+            setDueDateAssignmentProgress({ current: i + 1, total: tasksToProcess.length });
+            setDueDateAssignmentStatus(`Updating task ${i + 1} of ${tasksToProcess.length}: ${task.title}\n(delay: ${totalDelay}ms = ${baseDelay}+${variableDelay})`);
 
-        try {
-          const result = await updateTaskDueDate(task.id, selectedDueDateTaskList, dueDate);
-          results.push({
-            task: task,
-            dueDate: dueDate,
-            success: true,
-            result: result
-          });
-          
-          console.log(`Successfully updated task: ${task.title} with due date: ${dueDate.toLocaleDateString()}`);
-        } catch (error) {
-          console.error(`Failed to update task: ${task.title}`, error);
-          errors.push({
-            task: task,
-            dueDate: dueDate,
-            success: false,
-            error: error.message || 'Unknown error'
-          });
-        }
+            const result = await updateTaskDueDate(task.id, selectedDueDateTaskList, dueDate);
+            
+            // Verify the update was successful
+            if (result && result.result) {
+              updatedTasks.push({ id: task.id, title: task.title, index: i });
+              results.push({
+                task: task,
+                dueDate: dueDate,
+                success: true,
+                result: result
+              });
+              taskUpdated = true;
+              console.log(`Successfully updated task: ${task.title} with due date: ${dueDate.toLocaleDateString()}`);
+              
+              // On success: reduce variable delay by 10ms (linear decrease, min 100ms)
+              variableDelay = Math.max(variableDelay - 10, minVariableDelay);
+            } else {
+              throw new Error('Update did not return expected result');
+            }
 
-        // Add delay between requests to respect API rate limits (300ms)
-        if (i < tasksToProcess.length - 1) {
-          await new Promise(resolve => setTimeout(resolve, 300));
+            // Add delay between requests
+            if (i < tasksToProcess.length - 1) {
+              await new Promise(resolve => setTimeout(resolve, baseDelay + variableDelay));
+            }
+            
+          } catch (error) {
+            // Check if it's a 403 quota exceeded error
+            if (error.status === 403 || error.code === 403 || (error.message && error.message.includes('quota'))) {
+              // Double the variable delay
+              variableDelay = variableDelay * 2;
+              console.warn(`403 quota exceeded. Doubling variable delay to ${variableDelay}ms (total: ${baseDelay + variableDelay}ms)`);
+              
+              // Verify previous task if it exists
+              if (updatedTasks.length > 0) {
+                const prevTask = updatedTasks[updatedTasks.length - 1];
+                console.log(`Verifying previous task: ${prevTask.title}`);
+                try {
+                  const verifyResponse = await window.gapi.client.tasks.tasks.get({
+                    tasklist: selectedDueDateTaskList,
+                    task: prevTask.id
+                  });
+                  if (!verifyResponse.result || !verifyResponse.result.id) {
+                    console.error(`Previous task verification failed: ${prevTask.title}`);
+                    // Remove from updated tasks and retry
+                    updatedTasks.pop();
+                    const prevResult = results.pop();
+                    errors.push({
+                      task: prevResult.task,
+                      dueDate: prevResult.dueDate,
+                      success: false,
+                      error: 'Verification failed after quota error'
+                    });
+                    i = prevTask.index; // Go back to retry previous task
+                    taskUpdated = true; // Exit current task loop to retry previous
+                    continue;
+                  } else {
+                    console.log(`Previous task verified successfully: ${prevTask.title}`);
+                  }
+                } catch (verifyError) {
+                  console.error(`Error verifying previous task:`, verifyError);
+                }
+              }
+              
+              // Wait with increased delay before retrying current task
+              await new Promise(resolve => setTimeout(resolve, baseDelay + variableDelay));
+              // Loop will retry current task
+              
+            } else {
+              // Not a quota error, don't retry
+              console.error(`Failed to update task: ${task.title}`, error);
+              errors.push({
+                task: task,
+                dueDate: dueDate,
+                success: false,
+                error: error.message || 'Unknown error'
+              });
+              taskUpdated = true; // Mark as "done" to move to next task
+            }
+          }
         }
       }
 
