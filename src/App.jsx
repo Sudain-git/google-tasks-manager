@@ -2622,41 +2622,98 @@ function App() {
       let successCount = 0;
       let failureCount = 0;
       const failures = [];
+      const baseDelay = 200; // Base delay in ms (constant)
+      let variableDelay = 100; // Variable delay in ms (min 100ms)
+      const minVariableDelay = 100;
+      const updatedTasks = []; // Track updated task IDs for verification
 
       for (let i = 0; i < taskNames.length; i++) {
         const taskName = taskNames[i];
         const noteText = notes[i] || ''; // Use empty string if no corresponding note
+        let taskUpdated = false;
         
-        try {
-          setNotesStatus(`Processing ${i + 1} of ${taskNames.length}: Finding task "${taskName}"`);
-          setNotesProgress({ current: i, total: taskNames.length });
-          
-          // Find the task by name (case-insensitive)
-          const matchingTask = allTasks.find(task => 
-            task.title && task.title.toLowerCase() === taskName.toLowerCase()
-          );
-          
-          if (!matchingTask) {
-            throw new Error(`Task "${taskName}" not found in the selected list`);
+        while (!taskUpdated) {
+          try {
+            const totalDelay = baseDelay + variableDelay;
+            setNotesStatus(`Processing ${i + 1} of ${taskNames.length}: Finding task "${taskName}"\n(delay: ${totalDelay}ms = ${baseDelay}+${variableDelay})`);
+            setNotesProgress({ current: i, total: taskNames.length });
+            
+            // Find the task by name (case-insensitive)
+            const matchingTask = allTasks.find(task => 
+              task.title && task.title.toLowerCase() === taskName.toLowerCase()
+            );
+            
+            if (!matchingTask) {
+              throw new Error(`Task "${taskName}" not found in the selected list`);
+            }
+            
+            setNotesStatus(`Processing ${i + 1} of ${taskNames.length}: Setting notes for "${taskName}"\n(delay: ${totalDelay}ms = ${baseDelay}+${variableDelay})`);
+            
+            // Update the task with the note, preserving all existing fields
+            const result = await updateTaskNotes(matchingTask.id, selectedNotesTaskList, noteText, matchingTask);
+            
+            // Verify the update was successful
+            if (result && result.id) {
+              updatedTasks.push({ id: matchingTask.id, title: taskName, index: i });
+              console.log(`Successfully updated notes for task "${taskName}"`);
+              successCount++;
+              taskUpdated = true;
+              
+              // On success: reduce variable delay by 10ms (linear decrease, min 100ms)
+              variableDelay = Math.max(variableDelay - 10, minVariableDelay);
+            } else {
+              throw new Error('Update did not return expected result');
+            }
+            
+            // Rate limiting delay
+            if (i < taskNames.length - 1) {
+              await new Promise(resolve => setTimeout(resolve, baseDelay + variableDelay));
+            }
+            
+          } catch (error) {
+            // Check if it's a 403 quota exceeded error
+            if (error.status === 403 || error.code === 403 || (error.message && error.message.includes('quota'))) {
+              // Double the variable delay
+              variableDelay = variableDelay * 2;
+              console.warn(`403 quota exceeded. Doubling variable delay to ${variableDelay}ms (total: ${baseDelay + variableDelay}ms)`);
+              
+              // Verify previous task if it exists
+              if (updatedTasks.length > 0) {
+                const prevTask = updatedTasks[updatedTasks.length - 1];
+                console.log(`Verifying previous task: ${prevTask.title}`);
+                try {
+                  const verifyResponse = await window.gapi.client.tasks.tasks.get({
+                    tasklist: selectedNotesTaskList,
+                    task: prevTask.id
+                  });
+                  if (!verifyResponse.result || !verifyResponse.result.id) {
+                    console.error(`Previous task verification failed: ${prevTask.title}`);
+                    // Remove from updated tasks and retry
+                    updatedTasks.pop();
+                    successCount--;
+                    i = prevTask.index; // Go back to retry previous task
+                    taskUpdated = true; // Exit current task loop to retry previous
+                    continue;
+                  } else {
+                    console.log(`Previous task verified successfully: ${prevTask.title}`);
+                  }
+                } catch (verifyError) {
+                  console.error(`Error verifying previous task:`, verifyError);
+                }
+              }
+              
+              // Wait with increased delay before retrying current task
+              await new Promise(resolve => setTimeout(resolve, baseDelay + variableDelay));
+              // Loop will retry current task
+              
+            } else {
+              // Not a quota error, don't retry
+              console.error(`Failed to set notes for task "${taskName}":`, error);
+              failureCount++;
+              failures.push({ task: taskName, error: error.message });
+              taskUpdated = true; // Move to next task
+            }
           }
-          
-          setNotesStatus(`Processing ${i + 1} of ${taskNames.length}: Setting notes for "${taskName}"`);
-          
-          // Update the task with the note, preserving all existing fields
-          await updateTaskNotes(matchingTask.id, selectedNotesTaskList, noteText, matchingTask);
-          
-          console.log(`Successfully updated notes for task "${taskName}"`);
-          successCount++;
-          
-          // Rate limiting: wait 400ms between requests to avoid errors with 200+ tasks
-          if (i < taskNames.length - 1) {
-            await new Promise(resolve => setTimeout(resolve, 400));
-          }
-          
-        } catch (error) {
-          console.error(`Failed to set notes for task "${taskName}":`, error);
-          failureCount++;
-          failures.push({ task: taskName, error: error.message });
         }
       }
       

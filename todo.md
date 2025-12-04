@@ -61,4 +61,5 @@
 - [x] Apply adaptive delay algorithm to Bulk Complete tab
 - [x] Fix delay display formatting to show on separate line
 - [x] Apply adaptive delay algorithm to Due Date tab
-- [ ] Fix Due Date verification logic - tasks are updating successfully but verification is failing
+- [x] Fix Due Date verification logic - tasks are updating successfully but verification is failing
+- [ ] Add adaptive delay algorithm to Bulk Set Notes tab
