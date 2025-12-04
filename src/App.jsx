@@ -1831,10 +1831,18 @@ function App() {
         }
       });
       
+      // Check if response is valid
+      if (!response || !response.result) {
+        throw new Error('Invalid response from API');
+      }
+      
       console.log('Task inserted successfully:', response.result);
       
-      // Verify the task was created by checking its title
+      // Verify the task was created by checking its title and ID
       const insertedTask = response.result;
+      if (!insertedTask.id) {
+        throw new Error('Task was not assigned an ID');
+      }
       if (insertedTask.title !== taskTitle.trim()) {
         throw new Error(`Task title mismatch. Expected: "${taskTitle.trim()}", Got: "${insertedTask.title}"`);
       }
@@ -1881,9 +1889,9 @@ function App() {
           await insertSingleTask(taskTitle, selectedTaskList);
           successCount++;
           
-          // Rate limiting: wait 200ms between requests to avoid hitting API limits
+          // Rate limiting: wait 300ms between requests to avoid hitting API limits
           if (i < taskLines.length - 1) {
-            await new Promise(resolve => setTimeout(resolve, 200));
+            await new Promise(resolve => setTimeout(resolve, 300));
           }
           
         } catch (error) {

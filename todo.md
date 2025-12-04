@@ -37,3 +37,10 @@
 - [x] Detect API errors caused by expired tokens (401/403 errors)
 - [x] Update isSignedIn state when token expires
 - [x] Show clear message when session expires instead of empty lists
+
+## Bulk Operations Improvements
+- [x] Add rate limiting to Bulk Insert (300ms delay between requests)
+- [x] Add verification for each task insert before proceeding to next (checks ID and title)
+- [ ] Add rate limiting to Bulk Complete (delay between requests) - Tab 8 not in current version
+- [ ] Add verification for each task completion before proceeding to next - Tab 8 not in current version
+- [x] Handle large batches (1200+ tasks) without errors
