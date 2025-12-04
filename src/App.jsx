@@ -129,6 +129,44 @@ function App() {
   const [playlistProgress, setPlaylistProgress] = useState({ current: 0, total: 0 });
   const [playlistStatus, setPlaylistStatus] = useState('');
 
+  // Complete Tasks state
+  const [completeTasksList, setCompleteTasksList] = useState('');
+  const [completeTasks, setCompleteTasks] = useState([]);
+  const [isLoadingCompleteTasks, setIsLoadingCompleteTasks] = useState(false);
+  const [completeSearchTerm, setCompleteSearchTerm] = useState('');
+  const [completeCaseSensitive, setCompleteCaseSensitive] = useState(true);
+  const [completeSortBy, setCompleteSortBy] = useState('alphabetical');
+  const [completeCurrentPage, setCompleteCurrentPage] = useState(1);
+  const [completeSelectedTasks, setCompleteSelectedTasks] = useState([]);
+  const [completeActivePreset, setCompleteActivePreset] = useState('');
+  const [isCompletingTasks, setIsCompletingTasks] = useState(false);
+  const [completeProgress, setCompleteProgress] = useState({ current: 0, total: 0 });
+  const [completeStatus, setCompleteStatus] = useState('');
+  const [completeDurationFilter, setCompleteDurationFilter] = useState({
+    enabled: false,
+    mode: 'single',
+    value: '',
+    valueMin: '',
+    valueMax: '',
+    unit: 'seconds',
+    operator: 'less'
+  });
+  const [completeOmitRecurring, setCompleteOmitRecurring] = useState(true);
+  const [completeHierarchyFilter, setCompleteHierarchyFilter] = useState({
+    standalone: true,
+    parent: true,
+    child: true
+  });
+  const [completeDateFilter, setCompleteDateFilter] = useState({
+    enabled: false,
+    mode: 'exact',
+    date: '',
+    dateStart: '',
+    dateEnd: ''
+  });
+  const [completeShowDuplicates, setCompleteShowDuplicates] = useState(false);
+  const [completeSortField, setCompleteSortField] = useState('title');
+
   // Initialize Google API
   useEffect(() => {
     const initializeGapi = async () => {
@@ -203,25 +241,6 @@ function App() {
               // Listen for sign-in state changes
               authInstance.isSignedIn.listen(setIsSignedIn);
               console.log('Auth instance ready, signed in:', authInstance.isSignedIn.get());
-              
-              // Set up automatic token refresh every 45 minutes
-              const refreshInterval = setInterval(() => {
-                if (authInstance.isSignedIn.get()) {
-                  const currentUser = authInstance.currentUser.get();
-                  if (currentUser) {
-                    currentUser.reloadAuthResponse().then((authResponse) => {
-                      console.log('Token refreshed successfully', authResponse);
-                    }).catch((error) => {
-                      console.error('Token refresh failed:', error);
-                      // If refresh fails, just update the sign-in status indicator
-                      setIsSignedIn(false);
-                    });
-                  }
-                }
-              }, 45 * 60 * 1000); // 45 minutes
-              
-              // Store interval ID for cleanup
-              window.tokenRefreshInterval = refreshInterval;
             }
             
             setIsInitialized(true);
@@ -247,33 +266,10 @@ function App() {
 
     return () => {
       clearTimeout(timeout);
-      // Clean up token refresh interval
-      if (window.tokenRefreshInterval) {
-        clearInterval(window.tokenRefreshInterval);
-      }
     };
   }, []);
 
-  // Helper function to handle API errors and detect expired tokens
-  const handleApiError = (error) => {
-    console.error('API Error:', error);
-    
-    // Check if error is due to expired/invalid token
-    const isAuthError = 
-      error?.status === 401 || 
-      error?.status === 403 ||
-      error?.result?.error?.code === 401 ||
-      error?.result?.error?.code === 403 ||
-      error?.result?.error?.message?.includes('Invalid Credentials');
-    
-    if (isAuthError) {
-      console.log('Token expired or invalid, updating sign-in status');
-      setIsSignedIn(false);
-      alert('Your session has expired. Please sign in again.');
-    }
-    
-    return isAuthError;
-  };
+
 
   // Load task lists when user signs in
   useEffect(() => {
@@ -287,6 +283,58 @@ function App() {
       setAutoNotesTasksPreview([]);
     }
   }, [isSignedIn]);
+
+  // Smart token refresh - check and refresh token only when user takes action
+  const ensureValidToken = async () => {
+    const authInstance = window.gapi?.auth2?.getAuthInstance();
+    if (!authInstance || !authInstance.isSignedIn.get()) {
+      console.log('ensureValidToken: Not signed in or no auth instance');
+      setIsSignedIn(false);
+      return false;
+    }
+    
+    try {
+      const currentUser = authInstance.currentUser.get();
+      if (!currentUser) {
+        console.log('ensureValidToken: No current user');
+        return true; // Assume valid if we can't check
+      }
+      
+      const authResponse = currentUser.getAuthResponse(true);
+      if (!authResponse || !authResponse.expires_at) {
+        console.log('ensureValidToken: No auth response or expires_at, assuming valid');
+        return true; // Assume valid if we can't get expiration
+      }
+      
+      const expiresAt = authResponse.expires_at;
+      const now = Date.now();
+      
+      // If token expires in less than 5 minutes, refresh it
+      if (expiresAt < (now + 5 * 60 * 1000)) {
+        console.log('Token expiring soon, refreshing...');
+        await currentUser.reloadAuthResponse();
+        console.log('Token refreshed successfully');
+      }
+      
+      return true;
+    } catch (error) {
+      console.error('Token validation/refresh failed:', error);
+      // Don't set isSignedIn to false on error - just allow the API call to proceed
+      // The API call itself will fail if the token is actually invalid
+      console.log('Proceeding with API call despite token check error');
+      return true;
+    }
+  };
+
+  // Wrapper for API calls that ensures token is valid
+  const safeApiCall = async (apiFunction, errorMessage = 'Your session has expired. Please sign in again.') => {
+    const tokenValid = await ensureValidToken();
+    if (!tokenValid) {
+      alert(errorMessage);
+      throw new Error('Token expired');
+    }
+    return await apiFunction();
+  };
 
   const handleSignIn = async () => {
     try {
@@ -404,10 +452,8 @@ function App() {
     try {
       await executeLoad();
     } catch (error) {
-      const isAuthError = handleApiError(error);
-      if (!isAuthError) {
-        setInsertStatus('Failed to load task lists: ' + error.message);
-      }
+      console.error('Error loading task lists:', error);
+      setInsertStatus('Failed to load task lists: ' + error.message);
     }
   };
 
@@ -467,10 +513,7 @@ function App() {
       setDueDateTasks(allTasks);
       console.log(`Loaded ${allTasks.length} tasks for due date management`);
     } catch (error) {
-      const isAuthError = handleApiError(error);
-      if (!isAuthError) {
-        console.error('Error loading tasks for due date management:', error);
-      }
+      console.error('Error loading tasks for due date management:', error);
       setDueDateTasks([]);
     } finally {
       setIsLoadingDueDateTasks(false);
@@ -910,11 +953,8 @@ function App() {
         });
       }, 50);
     } catch (error) {
-      const isAuthError = handleApiError(error);
-      if (!isAuthError) {
-        console.error('Error loading subtasks tasks:', error);
-        alert('Error loading tasks. Please try again.');
-      }
+      console.error('Error loading subtasks tasks:', error);
+      alert('Error loading tasks. Please try again.');
     } finally {
       setIsLoadingSubtasksTasks(false);
     }
@@ -1279,11 +1319,8 @@ function App() {
       setBulkMoveCurrentPage(1);
 
     } catch (error) {
-      const isAuthError = handleApiError(error);
-      if (!isAuthError) {
-        console.error('Error loading bulk move tasks:', error);
-        alert('Error loading tasks. Please try again.');
-      }
+      console.error('Error loading bulk move tasks:', error);
+      alert('Error loading tasks. Please try again.');
     } finally {
       setIsLoadingBulkMoveTasks(false);
     }
@@ -1616,38 +1653,90 @@ function App() {
     let successCount = 0;
     let errorCount = 0;
     const errors = [];
+    const baseDelay = 200; // Base delay in ms (constant)
+    let variableDelay = 100; // Variable delay in ms (min 100ms)
+    const minVariableDelay = 100;
+    const movedTasks = []; // Track moved task IDs for verification
 
     try {
       for (let i = 0; i < bulkMoveSelectedTasks.length; i++) {
         const task = bulkMoveSelectedTasks[i];
+        let taskMoved = false;
         
-        setMoveProgress({ current: i + 1, total: bulkMoveSelectedTasks.length });
-        setMoveStatus(`Moving task ${i + 1} of ${bulkMoveSelectedTasks.length}: ${task.title}`);
+        while (!taskMoved) {
+          try {
+            const totalDelay = baseDelay + variableDelay;
+            setMoveProgress({ current: i + 1, total: bulkMoveSelectedTasks.length });
+            setMoveStatus(`Moving task ${i + 1} of ${bulkMoveSelectedTasks.length}: ${task.title}\n(delay: ${totalDelay}ms = ${baseDelay}+${variableDelay})`);
 
-        try {
-          // Move task using the Google Tasks API
-          const response = await window.gapi.client.tasks.tasks.move({
-            tasklist: bulkMoveSourceList,
-            task: task.id,
-            destinationTasklist: bulkMoveDestinationList
-          });
+            // Move task using the Google Tasks API
+            const response = await window.gapi.client.tasks.tasks.move({
+              tasklist: bulkMoveSourceList,
+              task: task.id,
+              destinationTasklist: bulkMoveDestinationList
+            });
 
-          // Verify the move was successful
-          if (response && response.result) {
-            successCount++;
-            console.log(`Successfully moved: ${task.title}`);
-          } else {
-            throw new Error('Move operation did not return expected result');
+            // Verify the move was successful
+            if (response && response.result) {
+              movedTasks.push({ id: task.id, title: task.title, index: i });
+              successCount++;
+              taskMoved = true;
+              console.log(`Successfully moved: ${task.title}`);
+              
+              // On success: reduce variable delay by 10ms (linear decrease, min 100ms)
+              variableDelay = Math.max(variableDelay - 10, minVariableDelay);
+            } else {
+              throw new Error('Move operation did not return expected result');
+            }
+
+            // Rate limiting delay
+            if (i < bulkMoveSelectedTasks.length - 1) {
+              await new Promise(resolve => setTimeout(resolve, baseDelay + variableDelay));
+            }
+          } catch (error) {
+            // Check if it's a 403 quota exceeded error
+            if (error.status === 403 || error.code === 403 || (error.message && error.message.includes('quota'))) {
+              // Double the variable delay
+              variableDelay = variableDelay * 2;
+              console.warn(`403 quota exceeded. Doubling variable delay to ${variableDelay}ms (total: ${baseDelay + variableDelay}ms)`);
+              
+              // Verify previous task if it exists
+              if (movedTasks.length > 0) {
+                const prevTask = movedTasks[movedTasks.length - 1];
+                console.log(`Verifying previous task: ${prevTask.title}`);
+                try {
+                  const verifyResponse = await window.gapi.client.tasks.tasks.get({
+                    tasklist: bulkMoveDestinationList,
+                    task: prevTask.id
+                  });
+                  if (!verifyResponse.result || !verifyResponse.result.id) {
+                    console.error(`Previous task verification failed: ${prevTask.title}`);
+                    // Remove from moved tasks and retry
+                    movedTasks.pop();
+                    successCount--;
+                    i = prevTask.index; // Go back to retry previous task
+                    taskMoved = true; // Exit current task loop to retry previous
+                    continue;
+                  } else {
+                    console.log(`Previous task verified successfully: ${prevTask.title}`);
+                  }
+                } catch (verifyError) {
+                  console.error(`Error verifying previous task:`, verifyError);
+                }
+              }
+              
+              // Wait with increased delay before retrying current task
+              await new Promise(resolve => setTimeout(resolve, baseDelay + variableDelay));
+              // Loop will retry current task
+              
+            } else {
+              // Not a quota error, don't retry
+              errorCount++;
+              errors.push(`${task.title}: ${error.message}`);
+              console.error(`Error moving ${task.title}:`, error);
+              taskMoved = true; // Mark as "done" to move to next task
+            }
           }
-
-          // Rate limiting delay
-          if (i < bulkMoveSelectedTasks.length - 1) {
-            await new Promise(resolve => setTimeout(resolve, 300));
-          }
-        } catch (error) {
-          errorCount++;
-          errors.push(`${task.title}: ${error.message}`);
-          console.error(`Error moving ${task.title}:`, error);
         }
       }
 
@@ -1820,6 +1909,360 @@ function App() {
     }
   };
 
+  // Complete Tasks Functions
+  const loadCompleteTasks = async () => {
+    if (!completeTasksList || !isSignedIn) return;
+
+    setIsLoadingCompleteTasks(true);
+    setCompleteTasks([]);
+    setCompleteSelectedTasks([]);
+
+    try {
+      let allTasks = [];
+      let pageToken = null;
+
+      do {
+        const params = {
+          tasklist: completeTasksList,
+          maxResults: 100,
+          showCompleted: true,
+          showHidden: true
+        };
+
+        if (pageToken) {
+          params.pageToken = pageToken;
+        }
+
+        const response = await window.gapi.client.tasks.tasks.list(params);
+        
+        if (response.result.items) {
+          allTasks = allTasks.concat(response.result.items);
+        }
+
+        pageToken = response.result.nextPageToken;
+
+        // Rate limiting
+        if (pageToken) {
+          await new Promise(resolve => setTimeout(resolve, 300));
+        }
+      } while (pageToken);
+
+      console.log(`Loaded ${allTasks.length} tasks from list`);
+      setCompleteTasks(allTasks);
+      setCompleteCurrentPage(1);
+
+    } catch (error) {
+      console.error('Error loading complete tasks:', error);
+      alert('Error loading tasks. Please try again.');
+    } finally {
+      setIsLoadingCompleteTasks(false);
+    }
+  };
+
+  useEffect(() => {
+    if (completeTasksList) {
+      loadCompleteTasks();
+    }
+  }, [completeTasksList]);
+
+  const filterAndSortCompleteTasks = () => {
+    let filtered = [...completeTasks];
+
+    // Filter out completed tasks (we only want incomplete tasks)
+    filtered = filtered.filter(task => task.status !== 'completed');
+
+    // Apply search filter
+    if (completeSearchTerm.trim()) {
+      const searchLower = completeCaseSensitive ? completeSearchTerm : completeSearchTerm.toLowerCase();
+      filtered = filtered.filter(task => {
+        const fieldToSearch = completeSortField === 'notes' ? (task.notes || '') : task.title;
+        const taskField = completeCaseSensitive ? fieldToSearch : fieldToSearch.toLowerCase();
+        return taskField.includes(searchLower);
+      });
+    }
+
+    // Apply duplicate filter
+    if (completeShowDuplicates) {
+      const fieldToCheck = completeSortField;
+      const valueCounts = new Map();
+      
+      filtered.forEach(task => {
+        const value = fieldToCheck === 'notes' ? (task.notes || '') : task.title;
+        const normalizedValue = completeCaseSensitive ? value : value.toLowerCase();
+        valueCounts.set(normalizedValue, (valueCounts.get(normalizedValue) || 0) + 1);
+      });
+      
+      filtered = filtered.filter(task => {
+        const value = fieldToCheck === 'notes' ? (task.notes || '') : task.title;
+        const normalizedValue = completeCaseSensitive ? value : value.toLowerCase();
+        return valueCounts.get(normalizedValue) > 1;
+      });
+    }
+
+    // Apply duration filter
+    if (completeDurationFilter.enabled) {
+      const unitMultipliers = {
+        'seconds': 1,
+        'minutes': 60,
+        'hours': 3600,
+        'days': 86400
+      };
+      
+      if (completeDurationFilter.mode === 'range' && completeDurationFilter.valueMin && completeDurationFilter.valueMax) {
+        const filterMinSeconds = parseFloat(completeDurationFilter.valueMin) * (unitMultipliers[completeDurationFilter.unit] || 1);
+        const filterMaxSeconds = parseFloat(completeDurationFilter.valueMax) * (unitMultipliers[completeDurationFilter.unit] || 1);
+        
+        filtered = filtered.filter(task => {
+          const taskDurationSeconds = parseDurationFromNotes(task.notes);
+          if (taskDurationSeconds === null) return false;
+          return taskDurationSeconds >= filterMinSeconds && taskDurationSeconds <= filterMaxSeconds;
+        });
+      } else if (completeDurationFilter.mode === 'single' && completeDurationFilter.value) {
+        const filterValue = parseFloat(completeDurationFilter.value);
+        const filterSeconds = filterValue * (unitMultipliers[completeDurationFilter.unit] || 1);
+        
+        filtered = filtered.filter(task => {
+          const taskDurationSeconds = parseDurationFromNotes(task.notes);
+          if (taskDurationSeconds === null) return false;
+          
+          switch (completeDurationFilter.operator) {
+            case 'less':
+              return taskDurationSeconds < filterSeconds;
+            case 'greater':
+              return taskDurationSeconds > filterSeconds;
+            case 'equal':
+              return Math.abs(taskDurationSeconds - filterSeconds) < 0.01;
+            default:
+              return true;
+          }
+        });
+      }
+    }
+
+    // Filter out recurring tasks if option is enabled
+    if (completeOmitRecurring) {
+      filtered = filtered.filter(task => !task.recurrence);
+    }
+
+    // Apply hierarchy filter
+    filtered = filtered.filter(task => {
+      const isParent = task.hasChildren || false;
+      const isChild = task.parent ? true : false;
+      const isStandalone = !isParent && !isChild;
+      
+      if (isStandalone && !completeHierarchyFilter.standalone) return false;
+      if (isParent && !completeHierarchyFilter.parent) return false;
+      if (isChild && !completeHierarchyFilter.child) return false;
+      
+      return true;
+    });
+
+    // Apply date filter
+    if (completeDateFilter.enabled) {
+      filtered = filtered.filter(task => {
+        if (!task.due) return false;
+        
+        const taskDate = new Date(task.due);
+        taskDate.setHours(0, 0, 0, 0);
+        const taskTime = taskDate.getTime();
+        
+        switch (completeDateFilter.mode) {
+          case 'exact':
+            if (!completeDateFilter.date) return true;
+            const filterDate = new Date(completeDateFilter.date);
+            filterDate.setHours(0, 0, 0, 0);
+            return taskTime === filterDate.getTime();
+            
+          case 'before':
+            if (!completeDateFilter.date) return true;
+            const beforeDate = new Date(completeDateFilter.date);
+            beforeDate.setHours(0, 0, 0, 0);
+            return taskTime <= beforeDate.getTime();
+            
+          case 'after':
+            if (!completeDateFilter.date) return true;
+            const afterDate = new Date(completeDateFilter.date);
+            afterDate.setHours(0, 0, 0, 0);
+            return taskTime >= afterDate.getTime();
+            
+          case 'range':
+            if (!completeDateFilter.dateStart || !completeDateFilter.dateEnd) return true;
+            const startDate = new Date(completeDateFilter.dateStart);
+            startDate.setHours(0, 0, 0, 0);
+            const endDate = new Date(completeDateFilter.dateEnd);
+            endDate.setHours(0, 0, 0, 0);
+            return taskTime >= startDate.getTime() && taskTime <= endDate.getTime();
+            
+          default:
+            return true;
+        }
+      });
+    }
+
+    // Apply sorting
+    filtered.sort((a, b) => {
+      switch (completeSortBy) {
+        case 'alphabetical':
+          return a.title.localeCompare(b.title);
+        case 'reverse-alphabetical':
+          return b.title.localeCompare(a.title);
+        case 'due-date-earliest':
+          if (!a.due && !b.due) return 0;
+          if (!a.due) return 1;
+          if (!b.due) return -1;
+          return new Date(a.due) - new Date(b.due);
+        case 'due-date-latest':
+          if (!a.due && !b.due) return 0;
+          if (!a.due) return 1;
+          if (!b.due) return -1;
+          return new Date(b.due) - new Date(a.due);
+        default:
+          return 0;
+      }
+    });
+
+    return filtered;
+  };
+
+  const getCompletePageData = () => {
+    const filtered = filterAndSortCompleteTasks();
+    const tasksPerPage = 20;
+    const totalPages = Math.ceil(filtered.length / tasksPerPage);
+    const startIndex = (completeCurrentPage - 1) * tasksPerPage;
+    const endIndex = startIndex + tasksPerPage;
+    const paginatedTasks = filtered.slice(startIndex, endIndex);
+
+    return {
+      tasks: paginatedTasks,
+      totalTasks: filtered.length,
+      totalPages,
+      currentPage: completeCurrentPage
+    };
+  };
+
+  const markTasksComplete = async () => {
+    if (completeSelectedTasks.length === 0) return;
+
+    setIsCompletingTasks(true);
+    setCompleteProgress({ current: 0, total: completeSelectedTasks.length });
+    setCompleteStatus('Starting to mark tasks as complete...');
+
+    let successCount = 0;
+    let failureCount = 0;
+    const baseDelay = 200; // Base delay in ms (constant)
+    let variableDelay = 100; // Variable delay in ms (min 100ms)
+    const minVariableDelay = 100;
+    const completedTasks = []; // Track completed task IDs for verification
+
+    try {
+      // Process tasks serially
+      for (let i = 0; i < completeSelectedTasks.length; i++) {
+        const taskId = completeSelectedTasks[i];
+        const task = completeTasks.find(t => t.id === taskId);
+        let taskCompleted = false;
+
+        while (!taskCompleted) {
+          try {
+            const totalDelay = baseDelay + variableDelay;
+            setCompleteProgress({ current: i + 1, total: completeSelectedTasks.length });
+            setCompleteStatus(`Completing task ${i + 1} of ${completeSelectedTasks.length}: ${task?.title || taskId}\n(delay: ${totalDelay}ms = ${baseDelay}+${variableDelay})`);
+
+            // Mark task as complete
+            const updateResponse = await window.gapi.client.tasks.tasks.patch({
+              tasklist: completeTasksList,
+              task: taskId,
+              resource: {
+                status: 'completed'
+              }
+            });
+
+            // Verify the task was marked as complete
+            if (updateResponse.result.status === 'completed') {
+              completedTasks.push({ id: taskId, title: task?.title || taskId, index: i });
+              successCount++;
+              taskCompleted = true;
+              console.log(`Task ${taskId} marked as complete`);
+              
+              // On success: reduce variable delay by 10ms (linear decrease, min 100ms)
+              variableDelay = Math.max(variableDelay - 10, minVariableDelay);
+            } else {
+              throw new Error('Task update did not verify');
+            }
+
+            // Rate limiting
+            if (i < completeSelectedTasks.length - 1) {
+              await new Promise(resolve => setTimeout(resolve, baseDelay + variableDelay));
+            }
+
+          } catch (error) {
+            // Check if it's a 403 quota exceeded error
+            if (error.status === 403 || error.code === 403 || (error.message && error.message.includes('quota'))) {
+              // Double the variable delay
+              variableDelay = variableDelay * 2;
+              console.warn(`403 quota exceeded. Doubling variable delay to ${variableDelay}ms (total: ${baseDelay + variableDelay}ms)`);
+              
+              // Verify previous task if it exists
+              if (completedTasks.length > 0) {
+                const prevTask = completedTasks[completedTasks.length - 1];
+                console.log(`Verifying previous task: ${prevTask.title}`);
+                try {
+                  const verifyResponse = await window.gapi.client.tasks.tasks.get({
+                    tasklist: completeTasksList,
+                    task: prevTask.id
+                  });
+                  if (!verifyResponse.result || verifyResponse.result.status !== 'completed') {
+                    console.error(`Previous task verification failed: ${prevTask.title}`);
+                    // Remove from completed tasks and retry
+                    completedTasks.pop();
+                    successCount--;
+                    i = prevTask.index; // Go back to retry previous task
+                    taskCompleted = true; // Exit current task loop to retry previous
+                    continue;
+                  } else {
+                    console.log(`Previous task verified successfully: ${prevTask.title}`);
+                  }
+                } catch (verifyError) {
+                  console.error(`Error verifying previous task:`, verifyError);
+                }
+              }
+              
+              // Wait with increased delay before retrying current task
+              await new Promise(resolve => setTimeout(resolve, baseDelay + variableDelay));
+              // Loop will retry current task
+              
+            } else {
+              // Not a quota error, don't retry
+              console.error(`Error completing task ${taskId}:`, error);
+              failureCount++;
+              taskCompleted = true; // Mark as "done" to move to next task
+            }
+          }
+        }
+      }
+
+      // Show final status
+      if (failureCount === 0) {
+        setCompleteStatus(`✅ Successfully marked ${successCount} tasks as complete!`);
+      } else {
+        setCompleteStatus(`⚠️ Marked ${successCount} tasks as complete, ${failureCount} failed`);
+      }
+
+      // Reload tasks to reflect changes
+      await loadCompleteTasks();
+
+    } catch (error) {
+      console.error('Error in markTasksComplete:', error);
+      setCompleteStatus(`❌ Error: ${error.message}`);
+    } finally {
+      setTimeout(() => {
+        setIsCompletingTasks(false);
+        setCompleteProgress({ current: 0, total: 0 });
+        setCompleteStatus('');
+        setCompleteSelectedTasks([]);
+      }, 5000);
+    }
+  };
+
   const insertSingleTask = async (taskTitle, taskListId) => {
     try {
       console.log(`Inserting task: "${taskTitle}" into list: ${taskListId}`);
@@ -1849,7 +2292,19 @@ function App() {
       
       return insertedTask;
     } catch (error) {
-      console.error('Error inserting task:', error);
+      // Check if it's a 403 rate limit error
+      if (error.status === 403 || error.code === 403) {
+        console.error('Rate limit exceeded (403). Consider increasing delay between requests.');
+        throw new Error('Rate limit exceeded. Please wait and try again.');
+      }
+      
+      // Log detailed error information
+      console.error('Error inserting task:', {
+        message: error.message,
+        status: error.status,
+        code: error.code,
+        details: error.result || error
+      });
       throw error;
     }
   };
@@ -1877,29 +2332,79 @@ function App() {
     let successCount = 0;
     let failureCount = 0;
     const failures = [];
+    const baseDelay = 200; // Base delay in ms (constant)
+    let variableDelay = 100; // Variable delay in ms (min 100ms)
+    const minVariableDelay = 100;
+    const insertedTasks = []; // Track inserted task IDs for verification
 
     try {
       for (let i = 0; i < taskLines.length; i++) {
         const taskTitle = taskLines[i];
+        let taskInserted = false;
         
-        try {
-          setInsertStatus(`Inserting task ${i + 1} of ${taskLines.length}: "${taskTitle}"`);
-          setInsertProgress({ current: i, total: taskLines.length });
-          
-          await insertSingleTask(taskTitle, selectedTaskList);
-          successCount++;
-          
-          // Rate limiting: wait 300ms between requests to avoid hitting API limits
-          if (i < taskLines.length - 1) {
-            await new Promise(resolve => setTimeout(resolve, 300));
+        while (!taskInserted) {
+          try {
+            const totalDelay = baseDelay + variableDelay;
+            setInsertStatus(`Inserting task ${i + 1} of ${taskLines.length}: "${taskTitle}"\n(delay: ${totalDelay}ms = ${baseDelay}+${variableDelay})`);
+            setInsertProgress({ current: i, total: taskLines.length });
+            
+            const insertedTask = await insertSingleTask(taskTitle, selectedTaskList);
+            insertedTasks.push({ id: insertedTask.id, title: taskTitle, index: i });
+            successCount++;
+            taskInserted = true;
+            
+            // On success: reduce variable delay by 10ms (linear decrease, min 100ms)
+            variableDelay = Math.max(variableDelay - 10, minVariableDelay);
+            
+            // Rate limiting: wait between requests
+            if (i < taskLines.length - 1) {
+              await new Promise(resolve => setTimeout(resolve, baseDelay + variableDelay));
+            }
+            
+          } catch (error) {
+            // Check if it's a 403 quota exceeded error
+            if (error.message && error.message.includes('Rate limit exceeded')) {
+              // Double the variable delay
+              variableDelay = variableDelay * 2;
+              console.warn(`403 quota exceeded. Doubling variable delay to ${variableDelay}ms (total: ${baseDelay + variableDelay}ms)`);
+              
+              // Verify previous task if it exists
+              if (insertedTasks.length > 0) {
+                const prevTask = insertedTasks[insertedTasks.length - 1];
+                console.log(`Verifying previous task: ${prevTask.title}`);
+                try {
+                  const verifyResponse = await window.gapi.client.tasks.tasks.get({
+                    tasklist: selectedTaskList,
+                    task: prevTask.id
+                  });
+                  if (!verifyResponse.result || !verifyResponse.result.id) {
+                    console.error(`Previous task verification failed: ${prevTask.title}`);
+                    // Remove from inserted tasks and retry
+                    insertedTasks.pop();
+                    successCount--;
+                    i = prevTask.index; // Go back to retry previous task
+                    taskInserted = true; // Exit current task loop to retry previous
+                    continue;
+                  } else {
+                    console.log(`Previous task verified successfully: ${prevTask.title}`);
+                  }
+                } catch (verifyError) {
+                  console.error(`Error verifying previous task:`, verifyError);
+                }
+              }
+              
+              // Wait with increased delay before retrying current task
+              await new Promise(resolve => setTimeout(resolve, baseDelay + variableDelay));
+              // Loop will retry current task
+              
+            } else {
+              // Not a quota error, don't retry
+              console.error(`Failed to insert task "${taskTitle}":`, error);
+              failureCount++;
+              failures.push({ task: taskTitle, error: error.message });
+              taskInserted = true; // Mark as "done" to move to next task
+            }
           }
-          
-        } catch (error) {
-          console.error(`Failed to insert task "${taskTitle}":`, error);
-          failureCount++;
-          failures.push({ task: taskTitle, error: error.message });
-          
-          // Continue with next task even if this one failed
         }
       }
       
@@ -4434,6 +4939,356 @@ function App() {
           </div>
         );
 
+      case 8:
+        return (
+          <div className="tab-content">
+            <h2>Bulk Complete</h2>
+            {isSignedIn ? (
+              <>
+                {/* Task List Selection */}
+                <div className="task-list-selection-section">
+                  <h4>Select Task List</h4>
+                  <p className="section-description">Choose the task list containing tasks you want to mark as complete.</p>
+                  <div className="form-group">
+                    <label htmlFor="completeTasksList">Task List:</label>
+                    <select
+                      id="completeTasksList"
+                      value={completeTasksList}
+                      onChange={(e) => setCompleteTasksList(e.target.value)}
+                      className="form-select"
+                      disabled={isCompletingTasks}
+                    >
+                      <option value="">Choose a task list...</option>
+                      {taskLists.map(list => (
+                        <option key={list.id} value={list.id}>{list.title}</option>
+                      ))}
+                    </select>
+                  </div>
+                  {isLoadingCompleteTasks && (
+                    <div className="loading-container">
+                      <div className="throbber"></div>
+                      <p>Loading tasks...</p>
+                    </div>
+                  )}
+                </div>
+
+                {/* Search and Filter Section - Only show if tasks are loaded */}
+                {completeTasksList && completeTasks.length > 0 && (
+                  <div className="search-filter-section">
+                    <h4>Search and Filter Tasks</h4>
+                    <p className="section-description">Find specific tasks to mark as complete using search and filters.</p>
+                    
+                    {/* Search Controls */}
+                    <div className="search-controls">
+                      <div className="search-row">
+                        <input
+                          type="text"
+                          placeholder="Search tasks..."
+                          value={completeSearchTerm}
+                          onChange={(e) => setCompleteSearchTerm(e.target.value)}
+                          className="search-input"
+                          disabled={isCompletingTasks}
+                        />
+                        <div className="radio-group">
+                          <label className="radio-label">
+                            <input
+                              type="radio"
+                              checked={completeSortField === 'title'}
+                              onChange={() => setCompleteSortField('title')}
+                              disabled={isCompletingTasks}
+                            />
+                            Title
+                          </label>
+                          <label className="radio-label">
+                            <input
+                              type="radio"
+                              checked={completeSortField === 'notes'}
+                              onChange={() => setCompleteSortField('notes')}
+                              disabled={isCompletingTasks}
+                            />
+                            Notes
+                          </label>
+                        </div>
+                      </div>
+
+                      <div className="filter-row">
+                        <label className="checkbox-label">
+                          <input
+                            type="checkbox"
+                            checked={completeCaseSensitive}
+                            onChange={(e) => setCompleteCaseSensitive(e.target.checked)}
+                            disabled={isCompletingTasks}
+                          />
+                          Case Sensitive
+                        </label>
+
+                        <label className="checkbox-label">
+                          <input
+                            type="checkbox"
+                            checked={completeShowDuplicates}
+                            onChange={(e) => setCompleteShowDuplicates(e.target.checked)}
+                            disabled={isCompletingTasks}
+                          />
+                          Show Only Duplicates
+                        </label>
+
+                        <label className="checkbox-label">
+                          <input
+                            type="checkbox"
+                            checked={completeOmitRecurring}
+                            onChange={(e) => setCompleteOmitRecurring(e.target.checked)}
+                            disabled={isCompletingTasks}
+                          />
+                          Omit Recurring Tasks
+                        </label>
+
+                        <div className="sort-controls">
+                          <label>Sort by:</label>
+                          <select
+                            value={completeSortBy}
+                            onChange={(e) => setCompleteSortBy(e.target.value)}
+                            className="form-select"
+                            disabled={isCompletingTasks}
+                          >
+                            <option value="alphabetical">A-Z</option>
+                            <option value="reverse-alphabetical">Z-A</option>
+                            <option value="due-date-earliest">Due Date (Earliest First)</option>
+                            <option value="due-date-latest">Due Date (Latest First)</option>
+                          </select>
+                        </div>
+                      </div>
+
+                      {/* Date Filter */}
+                      <div className="date-filter-section">
+                        <label className="checkbox-label">
+                          <input
+                            type="checkbox"
+                            checked={completeDateFilter.enabled}
+                            onChange={(e) => setCompleteDateFilter({...completeDateFilter, enabled: e.target.checked})}
+                            disabled={isCompletingTasks}
+                          />
+                          Filter by due date
+                        </label>
+                        {completeDateFilter.enabled && (
+                          <div className="date-picker-container" style={{marginTop: '12px'}}>
+                            <div className="radio-group-vertical" style={{marginBottom: '8px'}}>
+                              <label className="radio-label" style={{marginRight: '15px'}}>
+                                <input
+                                  type="radio"
+                                  checked={completeDateFilter.mode === 'exact'}
+                                  onChange={() => setCompleteDateFilter({...completeDateFilter, mode: 'exact'})}
+                                  disabled={isCompletingTasks}
+                                />
+                                Exact date
+                              </label>
+                              <label className="radio-label" style={{marginRight: '15px'}}>
+                                <input
+                                  type="radio"
+                                  checked={completeDateFilter.mode === 'before'}
+                                  onChange={() => setCompleteDateFilter({...completeDateFilter, mode: 'before'})}
+                                  disabled={isCompletingTasks}
+                                />
+                                On or before
+                              </label>
+                              <label className="radio-label" style={{marginRight: '15px'}}>
+                                <input
+                                  type="radio"
+                                  checked={completeDateFilter.mode === 'after'}
+                                  onChange={() => setCompleteDateFilter({...completeDateFilter, mode: 'after'})}
+                                  disabled={isCompletingTasks}
+                                />
+                                On or after
+                              </label>
+                              <label className="radio-label">
+                                <input
+                                  type="radio"
+                                  checked={completeDateFilter.mode === 'range'}
+                                  onChange={() => setCompleteDateFilter({...completeDateFilter, mode: 'range'})}
+                                  disabled={isCompletingTasks}
+                                />
+                                Date range
+                              </label>
+                            </div>
+                            {completeDateFilter.mode === 'range' ? (
+                              <div style={{display: 'flex', gap: '10px', alignItems: 'center'}}>
+                                <input
+                                  type="date"
+                                  value={completeDateFilter.dateStart}
+                                  onChange={(e) => setCompleteDateFilter({...completeDateFilter, dateStart: e.target.value})}
+                                  className="date-picker"
+                                  disabled={isCompletingTasks}
+                                />
+                                <span>to</span>
+                                <input
+                                  type="date"
+                                  value={completeDateFilter.dateEnd}
+                                  onChange={(e) => setCompleteDateFilter({...completeDateFilter, dateEnd: e.target.value})}
+                                  className="date-picker"
+                                  disabled={isCompletingTasks}
+                                />
+                              </div>
+                            ) : (
+                              <input
+                                type="date"
+                                value={completeDateFilter.date}
+                                onChange={(e) => setCompleteDateFilter({...completeDateFilter, date: e.target.value})}
+                                className="date-picker"
+                                disabled={isCompletingTasks}
+                              />
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Filtered Tasks Display */}
+                {completeTasksList && (() => {
+                  const pageData = getCompletePageData();
+                  return (
+                    <>
+                      {pageData.totalTasks > 0 ? (
+                        <div className="filtered-tasks-section">
+                          <h4>Tasks to Complete ({pageData.totalTasks} found)</h4>
+                          <p className="section-description">
+                            Select tasks to mark as complete. Tasks will be processed serially with verification.
+                          </p>
+
+                          {/* Selection Controls */}
+                          <div className="selection-controls-section">
+                            <div className="selection-buttons">
+                              <button
+                                onClick={() => setCompleteSelectedTasks(filterAndSortCompleteTasks().map(t => t.id))}
+                                className="select-all-btn"
+                                disabled={isCompletingTasks}
+                              >
+                                Select All
+                              </button>
+                              <button
+                                onClick={() => setCompleteSelectedTasks([])}
+                                className="clear-all-btn"
+                                disabled={isCompletingTasks}
+                              >
+                                Clear Selection
+                              </button>
+                            </div>
+                            <p style={{marginTop: '8px', fontSize: '0.875rem', color: '#6b7280'}}>
+                              {completeSelectedTasks.length} task(s) selected
+                            </p>
+                          </div>
+
+                          {/* Task List */}
+                          <div className="task-list-container">
+                            {pageData.tasks.map(task => (
+                              <div key={task.id} className="task-item">
+                                <label className="task-checkbox">
+                                  <input
+                                    type="checkbox"
+                                    checked={completeSelectedTasks.includes(task.id)}
+                                    onChange={(e) => {
+                                      if (e.target.checked) {
+                                        setCompleteSelectedTasks([...completeSelectedTasks, task.id]);
+                                      } else {
+                                        setCompleteSelectedTasks(completeSelectedTasks.filter(id => id !== task.id));
+                                      }
+                                    }}
+                                    disabled={isCompletingTasks}
+                                  />
+                                  <div>
+                                    <span className="task-title">{task.title}</span>
+                                    {task.notes && <div className="task-notes">{task.notes}</div>}
+                                    {task.due && (
+                                      <span className="task-due-date">
+                                        Due: {new Date(task.due).toLocaleDateString()}
+                                      </span>
+                                    )}
+                                  </div>
+                                </label>
+                              </div>
+                            ))}
+                          </div>
+
+                          {/* Pagination */}
+                          {pageData.totalPages > 1 && (
+                            <div style={{marginTop: '1rem', display: 'flex', justifyContent: 'center', gap: '0.5rem'}}>
+                              <button
+                                onClick={() => setCompleteCurrentPage(Math.max(1, completeCurrentPage - 1))}
+                                disabled={completeCurrentPage === 1 || isCompletingTasks}
+                                className="select-btn"
+                              >
+                                Previous
+                              </button>
+                              <span style={{padding: '0.5rem', color: '#374151'}}>
+                                Page {pageData.currentPage} of {pageData.totalPages}
+                              </span>
+                              <button
+                                onClick={() => setCompleteCurrentPage(Math.min(pageData.totalPages, completeCurrentPage + 1))}
+                                disabled={completeCurrentPage === pageData.totalPages || isCompletingTasks}
+                                className="select-btn"
+                              >
+                                Next
+                              </button>
+                            </div>
+                          )}
+
+                          {/* Mark Complete Button */}
+                          <div style={{marginTop: '1.5rem'}}>
+                            <button
+                              onClick={markTasksComplete}
+                              disabled={completeSelectedTasks.length === 0 || isCompletingTasks}
+                              className="assign-btn"
+                              style={{width: '100%'}}
+                            >
+                              {isCompletingTasks ? 'Marking Tasks Complete...' : `Mark ${completeSelectedTasks.length} Task(s) as Complete`}
+                            </button>
+                          </div>
+
+                          {/* Progress Section */}
+                          {isCompletingTasks && (
+                            <div className="progress-section" style={{marginTop: '1rem'}}>
+                              <div className="progress-bar">
+                                <div
+                                  className="progress-fill"
+                                  style={{
+                                    width: `${(completeProgress.current / completeProgress.total) * 100}%`
+                                  }}
+                                />
+                              </div>
+                              <p className="progress-text">
+                                {completeStatus} ({completeProgress.current}/{completeProgress.total})
+                              </p>
+                            </div>
+                          )}
+
+                          {/* Status Message */}
+                          {completeStatus && !isCompletingTasks && (
+                            <div className="status-message" style={{marginTop: '1rem'}}>
+                              <p>{completeStatus}</p>
+                            </div>
+                          )}
+                        </div>
+                      ) : (
+                        <div className="empty-list-message">
+                          <p>No incomplete tasks found matching your criteria.</p>
+                        </div>
+                      )}
+                    </>
+                  );
+                })()}
+
+                {!completeTasksList && (
+                  <div className="empty-list-message">
+                    <p>Please select a task list to begin.</p>
+                  </div>
+                )}
+              </>
+            ) : (
+              <p>Please sign in to use the bulk complete feature.</p>
+            )}
+          </div>
+        );
+
       default:
         return (
           <div className="tab-content">
@@ -4489,7 +5344,7 @@ function App() {
                 onClick={() => setActiveTab(tabNumber)}
                 className={`tab ${activeTab === tabNumber ? 'active' : ''}`}
               >
-                {tabNumber === 1 ? 'Bulk Insert' : tabNumber === 2 ? 'Bulk Set Notes' : tabNumber === 3 ? 'Automatic Notes Entry' : tabNumber === 4 ? 'Due Date' : tabNumber === 5 ? 'Bulk Move' : tabNumber === 6 ? 'Subtasks' : tabNumber === 7 ? 'YouTube List' : `Tab ${tabNumber}`}
+                {tabNumber === 1 ? 'Bulk Insert' : tabNumber === 2 ? 'Bulk Set Notes' : tabNumber === 3 ? 'Automatic Notes Entry' : tabNumber === 4 ? 'Due Date' : tabNumber === 5 ? 'Bulk Move' : tabNumber === 6 ? 'Subtasks' : tabNumber === 7 ? 'YouTube List' : tabNumber === 8 ? 'Bulk Complete' : `Tab ${tabNumber}`}
               </button>
             ))}
           </div>
