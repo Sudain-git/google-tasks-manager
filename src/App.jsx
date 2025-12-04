@@ -854,7 +854,7 @@ function App() {
             const result = await updateTaskDueDate(task.id, selectedDueDateTaskList, dueDate);
             
             // Verify the update was successful
-            if (result && result.result) {
+            if (result && result.id) {
               updatedTasks.push({ id: task.id, title: task.title, index: i });
               results.push({
                 task: task,
