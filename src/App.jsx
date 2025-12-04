@@ -878,7 +878,9 @@ function App() {
             
           } catch (error) {
             // Check if it's a 403 quota exceeded error
-            if (error.status === 403 || error.code === 403 || (error.message && error.message.includes('quota'))) {
+            if (error.status === 403 || error.code === 403 || 
+                (error.result && error.result.code === 403) ||
+                (error.message && (error.message.toLowerCase().includes('quota') || error.message.toLowerCase().includes('rate limit')))) {
               // Double the variable delay
               variableDelay = variableDelay * 2;
               console.warn(`403 quota exceeded. Doubling variable delay to ${variableDelay}ms (total: ${baseDelay + variableDelay}ms)`);
@@ -1759,7 +1761,9 @@ function App() {
             }
           } catch (error) {
             // Check if it's a 403 quota exceeded error
-            if (error.status === 403 || error.code === 403 || (error.message && error.message.includes('quota'))) {
+            if (error.status === 403 || error.code === 403 || 
+                (error.result && error.result.code === 403) ||
+                (error.message && (error.message.toLowerCase().includes('quota') || error.message.toLowerCase().includes('rate limit')))) {
               // Double the variable delay
               variableDelay = variableDelay * 2;
               console.warn(`403 quota exceeded. Doubling variable delay to ${variableDelay}ms (total: ${baseDelay + variableDelay}ms)`);
@@ -2260,7 +2264,9 @@ function App() {
 
           } catch (error) {
             // Check if it's a 403 quota exceeded error
-            if (error.status === 403 || error.code === 403 || (error.message && error.message.includes('quota'))) {
+            if (error.status === 403 || error.code === 403 || 
+                (error.result && error.result.code === 403) ||
+                (error.message && (error.message.toLowerCase().includes('quota') || error.message.toLowerCase().includes('rate limit')))) {
               // Double the variable delay
               variableDelay = variableDelay * 2;
               console.warn(`403 quota exceeded. Doubling variable delay to ${variableDelay}ms (total: ${baseDelay + variableDelay}ms)`);
@@ -2427,7 +2433,9 @@ function App() {
             
           } catch (error) {
             // Check if it's a 403 quota exceeded error
-            if (error.message && error.message.includes('Rate limit exceeded')) {
+            if (error.status === 403 || error.code === 403 || 
+                (error.result && error.result.code === 403) ||
+                (error.message && (error.message.toLowerCase().includes('quota') || error.message.toLowerCase().includes('rate limit')))) {
               // Double the variable delay
               variableDelay = variableDelay * 2;
               console.warn(`403 quota exceeded. Doubling variable delay to ${variableDelay}ms (total: ${baseDelay + variableDelay}ms)`);
@@ -2672,7 +2680,9 @@ function App() {
             
           } catch (error) {
             // Check if it's a 403 quota exceeded error
-            if (error.status === 403 || error.code === 403 || (error.message && error.message.includes('quota'))) {
+            if (error.status === 403 || error.code === 403 || 
+                (error.result && error.result.code === 403) ||
+                (error.message && (error.message.toLowerCase().includes('quota') || error.message.toLowerCase().includes('rate limit')))) {
               // Double the variable delay
               variableDelay = variableDelay * 2;
               console.warn(`403 quota exceeded. Doubling variable delay to ${variableDelay}ms (total: ${baseDelay + variableDelay}ms)`);
