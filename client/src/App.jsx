@@ -2660,41 +2660,8 @@ function App() {
                   </div>
                 )}
 
-                {/* Monitored Channels List */}
-                <div className="channels-section">
-                  <h3>Monitored YouTube Channels:</h3>
-                  <div className="channels-list">
-                    <div className="channel-item">Phillip Defranco</div>
-                    <div className="channel-item">LegalEagle</div>
-                    <div className="channel-item">LastWeekTonight</div>
-                    <div className="channel-item">Charisma On Command</div>
-                    <div className="channel-item">Simon Sinek</div>
-                    <div className="channel-item">Timothy Cain</div>
-                    <div className="channel-item">Hank Green</div>
-                    <div className="channel-item">The Diary of a CEO</div>
-                    <div className="channel-item">Mystic Arts</div>
-                    <div className="channel-item">MALINDA</div>
-                    <div className="channel-item">Shannon Morse</div>
-                    <div className="channel-item">Healthcare Triage</div>
-                    <div className="channel-item">AlexHormozi</div>
-                  </div>
-                  <p className="channels-help">
-                    Only videos from these channels will include the channel name in the notes.
-                  </p>
-                </div>
-
-                {/* Process Button */}
-                <div className="form-group">
-                  <button
-                    onClick={handleProcessYouTubeTasks}
-                    disabled={isProcessingAutoNotes || !selectedAutoNotesTaskList}
-                    className="insert-btn"
-                  >
-                    {isProcessingAutoNotes ? 'Processing...' : 'Process YouTube Tasks'}
-                  </button>
-                  <p className="form-help">
-                    This will find YouTube tasks without notes, extract video data, and automatically generate notes with duration, channel (if monitored), and title.
-                  </p>
+                <div className="feature-placeholder">
+                  <p>Automatic Notes Entry feature is currently under development.</p>
                 </div>
 
                 {/* Progress Bar */}
