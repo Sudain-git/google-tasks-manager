@@ -5,7 +5,7 @@ import React, { useState, useEffect } from 'react';
 const CLIENT_ID = '367863809541-6j28nl498c3nu8lsea72v5ie9ovee0mh.apps.googleusercontent.com';
 const API_KEY = 'AIzaSyCyiaTJQvRxteisE1oB5TB4JHUPEVdq-YE';
 const DISCOVERY_DOC = 'https://www.googleapis.com/discovery/v1/apis/tasks/v1/rest';
-const SCOPES = 'https://www.googleapis.com/auth/tasks';
+const SCOPES = 'https://www.googleapis.com/auth/tasks https://www.googleapis.com/auth/youtube.readonly';
 
 function App() {
   const [isSignedIn, setIsSignedIn] = useState(false);
@@ -2879,11 +2879,13 @@ function App() {
       const duration = formatDuration(video.contentDetails.duration);
       const title = video.snippet.title;
       const channelTitle = video.snippet.channelTitle;
+      const channelId = video.snippet.channelId;
       
       return {
         title,
         duration,
         channelTitle,
+        channelId,
         error: null
       };
     } catch (error) {
@@ -2892,8 +2894,37 @@ function App() {
         title: 'Video Unavailable',
         duration: 'Unknown',
         channelTitle: null,
+        channelId: null,
         error: error.message
       };
+    }
+  };
+
+  const checkYouTubeSubscription = async (channelId) => {
+    if (!channelId) return false;
+    
+    try {
+      const response = await fetch(
+        `https://www.googleapis.com/youtube/v3/subscriptions?part=snippet&mine=true&forChannelId=${channelId}&key=${API_KEY}`,
+        {
+          headers: {
+            'Authorization': `Bearer ${window.gapi.auth.getToken().access_token}`
+          }
+        }
+      );
+      
+      if (!response.ok) {
+        // If 403 or 401, it might be because the user hasn't granted YouTube permissions yet
+        // We'll just return false and not treat it as a critical error
+        console.warn(`YouTube subscription check failed: ${response.status}`);
+        return false;
+      }
+      
+      const data = await response.json();
+      return data.items && data.items.length > 0;
+    } catch (error) {
+      console.error('Error checking YouTube subscription:', error);
+      return false;
     }
   };
 
@@ -2920,14 +2951,14 @@ function App() {
     );
   };
 
-  const generateNotesText = (videoData, isShort) => {
+  const generateNotesText = (videoData, isShort, isSubscribed = false) => {
     let notes = '';
     
     // Add duration (always include actual duration, even for shorts)
     notes += videoData.duration;
     
-    // Add channel name if monitored
-    if (videoData.channelTitle && isMonitoredChannel(videoData.channelTitle)) {
+    // Add channel name if monitored OR subscribed
+    if (videoData.channelTitle && (isMonitoredChannel(videoData.channelTitle) || isSubscribed)) {
       notes += ` - ${videoData.channelTitle}`;
     }
     
@@ -2987,13 +3018,23 @@ function App() {
         try {
           // Get video data from YouTube API
           const videoData = await getVideoData(videoId);
+          let isSubscribed = false;
           
           if (videoData.error) {
             throw new Error(videoData.error);
           }
+
+          // Check subscription if not already monitored
+          if (videoData.channelId && !isMonitoredChannel(videoData.channelTitle)) {
+            setAutoNotesStatus(`Processing ${i + 1} of ${tasksToProcess.length}: Checking subscription for "${videoData.channelTitle}"...`);
+            isSubscribed = await checkYouTubeSubscription(videoData.channelId);
+            if (isSubscribed) {
+              console.log(`User is subscribed to ${videoData.channelTitle}`);
+            }
+          }
           
           // Generate notes text
-          const notesText = generateNotesText(videoData, isShort);
+          const notesText = generateNotesText(videoData, isShort, isSubscribed);
           
           setAutoNotesStatus(`Processing ${i + 1} of ${tasksToProcess.length}: Updating task notes for "${task.title}"`);
           

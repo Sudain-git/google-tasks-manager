@@ -64,3 +64,8 @@
 - [x] Fix Due Date verification logic - tasks are updating successfully but verification is failing
 - [x] Add adaptive delay algorithm to Bulk Set Notes tab
 - [x] Fix 403 error detection in Bulk Set Notes - errors not being caught and retried properly
+- [ ] Add YouTube Data API integration to Automatic Notes Entry tab
+- [ ] Add `youtube.readonly` scope to authentication
+- [ ] Implement `checkYouTubeSubscription` function to verify if user is subscribed to a channel
+- [ ] Update `processAutoNotes` to fetch video details and check subscriptions
+- [ ] Use channel name as note if subscribed
