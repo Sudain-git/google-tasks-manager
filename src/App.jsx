@@ -2924,6 +2924,22 @@ function App() {
         return false;
       }
 
+      // Diagnostic: Check who is signed in and their total subscriptions
+      try {
+        const channelResponse = await fetch(
+          `https://www.googleapis.com/youtube/v3/channels?part=snippet,contentDetails&mine=true&key=${API_KEY}`,
+          { headers: { 'Authorization': `Bearer ${accessToken}` } }
+        );
+        const channelData = await channelResponse.json();
+        if (channelData.items && channelData.items.length > 0) {
+          console.log(`Authenticated as YouTube Channel: ${channelData.items[0].snippet.title} (ID: ${channelData.items[0].id})`);
+        } else {
+          console.warn('Authenticated user has no YouTube channel associated.');
+        }
+      } catch (e) {
+        console.error('Error checking authenticated channel:', e);
+      }
+
       console.log(`Checking subscription for channel ${channelId}...`);
       
       const response = await fetch(

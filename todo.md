@@ -69,4 +69,8 @@
 - [x] Implement `checkYouTubeSubscription` function to verify if user is subscribed to a channel
 - [x] Update `processAutoNotes` to fetch video details and check subscriptions
 - [x] Use channel name as note if subscribed
-- [ ] Fix YouTube subscription check - improve token retrieval and add logging
+- [x] Fix YouTube subscription check - improve token retrieval and add logging
+- [ ] Debug YouTube subscription check failure
+- [ ] Verify correct Channel ID for "Game Maker's Toolkit"
+- [ ] Investigate if `mine=true` works correctly with Brand Accounts
+- [ ] Consider fetching all subscriptions and filtering locally if `forChannelId` is unreliable
