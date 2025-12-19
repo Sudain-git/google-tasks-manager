@@ -63,4 +63,4 @@
 - [x] Apply adaptive delay algorithm to Due Date tab
 - [x] Fix Due Date verification logic - tasks are updating successfully but verification is failing
 - [x] Add adaptive delay algorithm to Bulk Set Notes tab
-- [ ] Fix 403 error detection in Bulk Set Notes - errors not being caught and retried properly
+- [x] Fix 403 error detection in Bulk Set Notes - errors not being caught and retried properly
