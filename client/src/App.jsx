@@ -129,6 +129,87 @@ function App() {
   const [playlistProgress, setPlaylistProgress] = useState({ current: 0, total: 0 });
   const [playlistStatus, setPlaylistStatus] = useState('');
 
+  // Adaptive Delay Algorithm Helper
+  const processWithAdaptiveDelay = async (items, processItemFn, updateProgressFn, updateStatusFn, options = {}) => {
+    const {
+      baseDelay = 200,
+      minVariableDelay = 100,
+      initialVariableDelay = 100,
+      maxRetries = 3,
+      itemName = 'item'
+    } = options;
+
+    let variableDelay = initialVariableDelay;
+    let successCount = 0;
+    let failureCount = 0;
+    const failures = [];
+    const results = [];
+
+    for (let i = 0; i < items.length; i++) {
+      const item = items[i];
+      let retries = 0;
+      let success = false;
+
+      while (!success && retries <= maxRetries) {
+        try {
+          if (updateProgressFn) updateProgressFn(i, items.length);
+          if (updateStatusFn) updateStatusFn(i, item, retries);
+
+          const result = await processItemFn(item);
+          results.push(result);
+          success = true;
+          successCount++;
+
+          // On success, slightly reduce variable delay to optimize speed
+          variableDelay = Math.max(minVariableDelay, variableDelay - 10);
+          
+        } catch (error) {
+          // Check for 403 Quota Exceeded or Rate Limit errors
+          const isQuotaError = 
+            error.status === 403 || 
+            error.code === 403 || 
+            (error.result && error.result.code === 403) ||
+            (error.message && (
+              error.message.includes('quota') || 
+              error.message.includes('rate limit') || 
+              error.message.includes('403')
+            ));
+
+          if (isQuotaError) {
+            console.warn(`Quota error encountered for ${itemName} "${item.title || item}". Increasing delay.`);
+            
+            // Double the variable delay on quota error
+            variableDelay *= 2;
+            
+            // Wait longer before retry
+            await new Promise(resolve => setTimeout(resolve, variableDelay * 5));
+            
+            retries++;
+            if (retries > maxRetries) {
+              failureCount++;
+              failures.push({ item, error: error.message });
+              console.error(`Max retries reached for ${itemName}:`, error);
+            }
+          } else {
+            // Non-quota error, fail immediately
+            failureCount++;
+            failures.push({ item, error: error.message });
+            console.error(`Error processing ${itemName}:`, error);
+            break; 
+          }
+        }
+      }
+
+      // Apply adaptive delay between items
+      if (i < items.length - 1) {
+        const totalDelay = baseDelay + variableDelay;
+        await new Promise(resolve => setTimeout(resolve, totalDelay));
+      }
+    }
+
+    return { successCount, failureCount, failures, results };
+  };
+
   // Initialize Google API
   useEffect(() => {
     const initializeGapi = async () => {
@@ -733,55 +814,37 @@ function App() {
 
       setDueDateAssignmentStatus('Assigning due dates to tasks...');
 
-      const results = [];
-      const errors = [];
+      // Prepare items with their due dates
+      const itemsToProcess = tasksToProcess.map((task, index) => ({
+        task,
+        dueDate: dueDates[index]
+      }));
 
-      // Process tasks one by one with delay to respect API limits
-      for (let i = 0; i < tasksToProcess.length; i++) {
-        const task = tasksToProcess[i];
-        const dueDate = dueDates[i];
-        
-        setDueDateAssignmentProgress({ current: i + 1, total: tasksToProcess.length });
-        setDueDateAssignmentStatus(`Updating task ${i + 1} of ${tasksToProcess.length}: ${task.title}`);
-
-        try {
+      const { successCount, failureCount, failures } = await processWithAdaptiveDelay(
+        itemsToProcess,
+        async ({ task, dueDate }) => {
           const result = await updateTaskDueDate(task.id, selectedDueDateTaskList, dueDate);
-          results.push({
-            task: task,
-            dueDate: dueDate,
-            success: true,
-            result: result
-          });
-          
           console.log(`Successfully updated task: ${task.title} with due date: ${dueDate.toLocaleDateString()}`);
-        } catch (error) {
-          console.error(`Failed to update task: ${task.title}`, error);
-          errors.push({
-            task: task,
-            dueDate: dueDate,
-            success: false,
-            error: error.message || 'Unknown error'
-          });
-        }
-
-        // Add delay between requests to respect API rate limits (300ms)
-        if (i < tasksToProcess.length - 1) {
-          await new Promise(resolve => setTimeout(resolve, 300));
-        }
-      }
+          return result;
+        },
+        (index, total) => setDueDateAssignmentProgress({ current: index, total }),
+        (index, { task }, retries) => {
+          let status = `Updating task ${index + 1} of ${tasksToProcess.length}: ${task.title}`;
+          if (retries > 0) status += ` (Retry ${retries})`;
+          setDueDateAssignmentStatus(status);
+        },
+        { itemName: 'task due date' }
+      );
 
       // Show completion status
-      const successCount = results.length;
-      const errorCount = errors.length;
-      
-      if (errorCount === 0) {
+      if (failureCount === 0) {
         setDueDateAssignmentStatus(`✅ Successfully assigned due dates to ${successCount} tasks!`);
       } else {
-        setDueDateAssignmentStatus(`⚠️ Completed with ${successCount} successes and ${errorCount} errors. Check console for details.`);
+        setDueDateAssignmentStatus(`⚠️ Completed with ${successCount} successes and ${failureCount} errors. Check console for details.`);
         
         // Log detailed error information
-        if (errors.length > 0) {
-          console.error('Due date assignment errors:', errors);
+        if (failures.length > 0) {
+          console.error('Due date assignment errors:', failures);
         }
       }
 
@@ -1527,55 +1590,43 @@ function App() {
     setMoveProgress({ current: 0, total: bulkMoveSelectedTasks.length });
     setMoveStatus('Starting task move...');
 
-    let successCount = 0;
-    let errorCount = 0;
-    const errors = [];
-
     try {
-      for (let i = 0; i < bulkMoveSelectedTasks.length; i++) {
-        const task = bulkMoveSelectedTasks[i];
-        
-        setMoveProgress({ current: i + 1, total: bulkMoveSelectedTasks.length });
-        setMoveStatus(`Moving task ${i + 1} of ${bulkMoveSelectedTasks.length}: ${task.title}`);
-
-        try {
-          // Move task using the Google Tasks API
+      const { successCount, failureCount, failures } = await processWithAdaptiveDelay(
+        bulkMoveSelectedTasks,
+        async (task) => {
           const response = await window.gapi.client.tasks.tasks.move({
             tasklist: bulkMoveSourceList,
             task: task.id,
             destinationTasklist: bulkMoveDestinationList
           });
-
-          // Verify the move was successful
+          
           if (response && response.result) {
-            successCount++;
             console.log(`Successfully moved: ${task.title}`);
+            return response.result;
           } else {
             throw new Error('Move operation did not return expected result');
           }
-
-          // Rate limiting delay
-          if (i < bulkMoveSelectedTasks.length - 1) {
-            await new Promise(resolve => setTimeout(resolve, 300));
-          }
-        } catch (error) {
-          errorCount++;
-          errors.push(`${task.title}: ${error.message}`);
-          console.error(`Error moving ${task.title}:`, error);
-        }
-      }
+        },
+        (index, total) => setMoveProgress({ current: index, total }),
+        (index, task, retries) => {
+          let status = `Moving task ${index + 1} of ${bulkMoveSelectedTasks.length}: ${task.title}`;
+          if (retries > 0) status += ` (Retry ${retries})`;
+          setMoveStatus(status);
+        },
+        { itemName: 'task move' }
+      );
 
       // Show completion status
-      if (successCount > 0 && errorCount === 0) {
+      if (successCount > 0 && failureCount === 0) {
         setMoveStatus(`✅ Successfully moved ${successCount} task(s)!`);
-      } else if (successCount > 0 && errorCount > 0) {
-        setMoveStatus(`⚠️ Moved ${successCount} task(s) with ${errorCount} error(s)`);
+      } else if (successCount > 0 && failureCount > 0) {
+        setMoveStatus(`⚠️ Moved ${successCount} task(s) with ${failureCount} error(s)`);
       } else {
         setMoveStatus(`❌ Failed to move tasks. Please try again.`);
       }
 
-      if (errors.length > 0) {
-        console.error('Move errors:', errors);
+      if (failures.length > 0) {
+        console.error('Move errors:', failures);
       }
 
       // Refresh the source task list
@@ -1780,35 +1831,19 @@ function App() {
     setInsertProgress({ current: 0, total: taskLines.length });
     setInsertStatus('Starting bulk insert...');
 
-    let successCount = 0;
-    let failureCount = 0;
-    const failures = [];
-
     try {
-      for (let i = 0; i < taskLines.length; i++) {
-        const taskTitle = taskLines[i];
-        
-        try {
-          setInsertStatus(`Inserting task ${i + 1} of ${taskLines.length}: "${taskTitle}"`);
-          setInsertProgress({ current: i, total: taskLines.length });
-          
-          await insertSingleTask(taskTitle, selectedTaskList);
-          successCount++;
-          
-          // Rate limiting: wait 200ms between requests to avoid hitting API limits
-          if (i < taskLines.length - 1) {
-            await new Promise(resolve => setTimeout(resolve, 200));
-          }
-          
-        } catch (error) {
-          console.error(`Failed to insert task "${taskTitle}":`, error);
-          failureCount++;
-          failures.push({ task: taskTitle, error: error.message });
-          
-          // Continue with next task even if this one failed
-        }
-      }
-      
+      const { successCount, failureCount, failures } = await processWithAdaptiveDelay(
+        taskLines,
+        async (taskTitle) => await insertSingleTask(taskTitle, selectedTaskList),
+        (index, total) => setInsertProgress({ current: index, total }),
+        (index, taskTitle, retries) => {
+          let status = `Inserting task ${index + 1} of ${taskLines.length}: "${taskTitle}"`;
+          if (retries > 0) status += ` (Retry ${retries})`;
+          setInsertStatus(status);
+        },
+        { itemName: 'task' }
+      );
+
       setInsertProgress({ current: taskLines.length, total: taskLines.length });
       
       let statusMessage = `Bulk insert completed! ${successCount} tasks inserted successfully.`;
@@ -1819,14 +1854,14 @@ function App() {
       
       setInsertStatus(statusMessage);
       
-      // Clear the text area if all tasks were successful
+      // Clear the text area if mostly successful
       if (failureCount === 0) {
         setBulkTasksText('');
       }
       
     } catch (error) {
-      console.error('Bulk insert error:', error);
-      setInsertStatus('Bulk insert failed: ' + error.message);
+      console.error('Error in bulk insert:', error);
+      setInsertStatus(`❌ Error: ${error.message}`);
     } finally {
       setIsInserting(false);
     }
@@ -1956,18 +1991,15 @@ function App() {
       const allTasks = await getAllTasksFromList(selectedNotesTaskList);
       console.log(`Found ${allTasks.length} tasks in the list`);
 
-      let successCount = 0;
-      let failureCount = 0;
-      const failures = [];
+      // Prepare items for processing
+      const itemsToProcess = taskNames.map((taskName, index) => ({
+        taskName,
+        noteText: notes[index] || ''
+      }));
 
-      for (let i = 0; i < taskNames.length; i++) {
-        const taskName = taskNames[i];
-        const noteText = notes[i] || ''; // Use empty string if no corresponding note
-        
-        try {
-          setNotesStatus(`Processing ${i + 1} of ${taskNames.length}: Finding task "${taskName}"`);
-          setNotesProgress({ current: i, total: taskNames.length });
-          
+      const { successCount, failureCount, failures } = await processWithAdaptiveDelay(
+        itemsToProcess,
+        async ({ taskName, noteText }) => {
           // Find the task by name (case-insensitive)
           const matchingTask = allTasks.find(task => 
             task.title && task.title.toLowerCase() === taskName.toLowerCase()
@@ -1977,32 +2009,27 @@ function App() {
             throw new Error(`Task "${taskName}" not found in the selected list`);
           }
           
-          setNotesStatus(`Processing ${i + 1} of ${taskNames.length}: Setting notes for "${taskName}"`);
-          
           // Update the task with the note, preserving all existing fields
           await updateTaskNotes(matchingTask.id, selectedNotesTaskList, noteText, matchingTask);
           
           console.log(`Successfully updated notes for task "${taskName}"`);
-          successCount++;
-          
-          // Rate limiting: wait 400ms between requests to avoid errors with 200+ tasks
-          if (i < taskNames.length - 1) {
-            await new Promise(resolve => setTimeout(resolve, 400));
-          }
-          
-        } catch (error) {
-          console.error(`Failed to set notes for task "${taskName}":`, error);
-          failureCount++;
-          failures.push({ task: taskName, error: error.message });
-        }
-      }
-      
+          return matchingTask;
+        },
+        (index, total) => setNotesProgress({ current: index, total }),
+        (index, { taskName }, retries) => {
+          let status = `Processing ${index + 1} of ${taskNames.length}: "${taskName}"`;
+          if (retries > 0) status += ` (Retry ${retries})`;
+          setNotesStatus(status);
+        },
+        { itemName: 'task note' }
+      );
+
       setNotesProgress({ current: taskNames.length, total: taskNames.length });
       
       let statusMessage = `Bulk notes update completed! ${successCount} tasks updated successfully.`;
       if (failureCount > 0) {
         statusMessage += ` ${failureCount} tasks failed:\n`;
-        const failedTaskNames = failures.map(failure => `• ${failure.task}: ${failure.error}`).join('\n');
+        const failedTaskNames = failures.map(failure => `• ${failure.item.taskName}: ${failure.error}`).join('\n');
         statusMessage += failedTaskNames;
         console.log('Failed tasks:', failures);
       }
@@ -2241,20 +2268,12 @@ function App() {
       setAutoNotesProgress({ current: 0, total: tasksToProcess.length });
       setAutoNotesStatus(`Found ${tasksToProcess.length} YouTube tasks to process. Starting video data extraction...`);
 
-      let successCount = 0;
-      let failureCount = 0;
-      const failures = [];
-
-      // Process each task
-      for (let i = 0; i < tasksToProcess.length; i++) {
-        const task = tasksToProcess[i];
-        const videoId = extractVideoId(task.title);
-        const isShort = isYouTubeShort(task.title);
-        
-        setAutoNotesProgress({ current: i, total: tasksToProcess.length });
-        setAutoNotesStatus(`Processing ${i + 1} of ${tasksToProcess.length}: Getting video data for "${task.title}"`);
-        
-        try {
+      const { successCount, failureCount, failures } = await processWithAdaptiveDelay(
+        tasksToProcess,
+        async (task) => {
+          const videoId = extractVideoId(task.title);
+          const isShort = isYouTubeShort(task.title);
+          
           // Get video data from YouTube API
           const videoData = await getVideoData(videoId);
           
@@ -2265,32 +2284,27 @@ function App() {
           // Generate notes text
           const notesText = generateNotesText(videoData, isShort);
           
-          setAutoNotesStatus(`Processing ${i + 1} of ${tasksToProcess.length}: Updating task notes for "${task.title}"`);
-          
           // Update the task with notes, preserving all existing fields
           await updateTaskNotes(task.id, selectedAutoNotesTaskList, notesText, task);
           
           console.log(`Successfully updated notes for task "${task.title}" with: "${notesText}"`);
-          successCount++;
-          
-          // Rate limiting - wait between requests
-          if (i < tasksToProcess.length - 1) {
-            await new Promise(resolve => setTimeout(resolve, 300)); // 300ms delay
-          }
-          
-        } catch (error) {
-          console.error(`Error processing task "${task.title}":`, error);
-          failureCount++;
-          failures.push({ task: task.title, error: error.message });
-        }
-      }
-      
+          return notesText;
+        },
+        (index, total) => setAutoNotesProgress({ current: index, total }),
+        (index, task, retries) => {
+          let status = `Processing ${index + 1} of ${tasksToProcess.length}: "${task.title}"`;
+          if (retries > 0) status += ` (Retry ${retries})`;
+          setAutoNotesStatus(status);
+        },
+        { itemName: 'YouTube task' }
+      );
+
       setAutoNotesProgress({ current: tasksToProcess.length, total: tasksToProcess.length });
       
       let statusMessage = `YouTube tasks processing completed!\n\n${successCount} tasks updated successfully.`;
       if (failureCount > 0) {
         statusMessage += ` ${failureCount} tasks failed:\n`;
-        const failedTaskNames = failures.map(failure => `• ${failure.task}: ${failure.error}`).join('\n');
+        const failedTaskNames = failures.map(failure => `• ${failure.item.title}: ${failure.error}`).join('\n');
         statusMessage += failedTaskNames;
         console.log('Failed tasks:', failures);
       }
