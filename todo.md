@@ -77,4 +77,8 @@
 - [x] Implement `fetchAllSubscriptions` to get all user subscriptions at once
 - [x] Update `handleProcessYouTubeTasks` to use the local subscription list
 - [x] Add logging to show total number of subscriptions found
-- [ ] Update Google Sign-In to use `prompt: 'select_account'` to allow Brand Account selection
+- [x] Update Google Sign-In to use `prompt: 'select_account'` to allow Brand Account selection
+- [ ] Add `youtubeAccessToken` state to store secondary account token
+- [ ] Add "Link YouTube Account" button to Automatic Notes tab
+- [ ] Implement `handleYouTubeSignIn` to authenticate secondary account
+- [ ] Update `fetchAllSubscriptions` to use `youtubeAccessToken` if available

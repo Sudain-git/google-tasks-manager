@@ -39,6 +39,8 @@ function App() {
   const [autoNotesProgress, setAutoNotesProgress] = useState({ current: 0, total: 0 });
   const [autoNotesStatus, setAutoNotesStatus] = useState('');
   const [isLoadingTasksPreview, setIsLoadingTasksPreview] = useState(false);
+  const [youtubeAccessToken, setYoutubeAccessToken] = useState(null);
+  const [youtubeUser, setYoutubeUser] = useState(null);
 
   // Due Date Management state
   const [selectedDueDateTaskList, setSelectedDueDateTaskList] = useState('');
@@ -418,9 +420,53 @@ function App() {
       const authInstance = window.gapi.auth2.getAuthInstance();
       await authInstance.signOut();
       setTasks([]);
+      setYoutubeAccessToken(null);
+      setYoutubeUser(null);
     } catch (error) {
       console.error('Error signing out:', error);
     }
+  };
+
+  const handleYouTubeSignIn = () => {
+    if (!window.google || !window.google.accounts) {
+      alert('Google Identity Services not loaded');
+      return;
+    }
+
+    const client = window.google.accounts.oauth2.initTokenClient({
+      client_id: CLIENT_ID,
+      scope: 'https://www.googleapis.com/auth/youtube.readonly',
+      prompt: 'select_account',
+      callback: async (response) => {
+        if (response.error) {
+          console.error('YouTube sign in failed:', response);
+          return;
+        }
+        
+        console.log('YouTube secondary sign in successful');
+        setYoutubeAccessToken(response.access_token);
+        
+        // Fetch user info for the secondary account
+        try {
+          const channelResponse = await fetch(
+            `https://www.googleapis.com/youtube/v3/channels?part=snippet&mine=true&key=${API_KEY}`,
+            { headers: { 'Authorization': `Bearer ${response.access_token}` } }
+          );
+          const channelData = await channelResponse.json();
+          if (channelData.items && channelData.items.length > 0) {
+            setYoutubeUser(channelData.items[0].snippet.title);
+            setAutoNotesStatus(`Connected to YouTube account: ${channelData.items[0].snippet.title}`);
+          } else {
+            setYoutubeUser('Unknown User');
+          }
+        } catch (e) {
+          console.error('Error fetching YouTube user info:', e);
+          setYoutubeUser('Connected');
+        }
+      },
+    });
+    
+    client.requestAccessToken();
   };
 
   const loadTaskLists = async () => {
@@ -2906,15 +2952,22 @@ function App() {
       // Try to get token from different possible locations
       let accessToken = null;
       
-      if (window.gapi && window.gapi.client && window.gapi.client.getToken) {
-        const tokenObj = window.gapi.client.getToken();
-        if (tokenObj) accessToken = tokenObj.access_token;
-      }
-      
-      if (!accessToken && window.gapi && window.gapi.auth2) {
-        const authInstance = window.gapi.auth2.getAuthInstance();
-        if (authInstance && authInstance.isSignedIn.get()) {
-          accessToken = authInstance.currentUser.get().getAuthResponse().access_token;
+      // First priority: Use the secondary YouTube account token if available
+      if (youtubeAccessToken) {
+        console.log('Using secondary YouTube account token for subscription check');
+        accessToken = youtubeAccessToken;
+      } else {
+        // Fallback: Use the main sign-in token
+        if (window.gapi && window.gapi.client && window.gapi.client.getToken) {
+          const tokenObj = window.gapi.client.getToken();
+          if (tokenObj) accessToken = tokenObj.access_token;
+        }
+        
+        if (!accessToken && window.gapi && window.gapi.auth2) {
+          const authInstance = window.gapi.auth2.getAuthInstance();
+          if (authInstance && authInstance.isSignedIn.get()) {
+            accessToken = authInstance.currentUser.get().getAuthResponse().access_token;
+          }
         }
       }
       
@@ -3471,6 +3524,43 @@ function App() {
                     )}
                   </div>
                 )}
+
+                {/* YouTube Account Connection */}
+                <div className="youtube-account-section" style={{ 
+                  marginBottom: '1.5rem', 
+                  padding: '1rem', 
+                  backgroundColor: '#f0f9ff', 
+                  border: '1px solid #bae6fd', 
+                  borderRadius: '6px' 
+                }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <div>
+                      <h3 style={{ margin: '0 0 0.5rem 0', color: '#0369a1' }}>YouTube Subscription Check</h3>
+                      <p style={{ margin: 0, fontSize: '0.9rem', color: '#0c4a6e' }}>
+                        {youtubeUser 
+                          ? `Connected as: ${youtubeUser}` 
+                          : 'Connect a YouTube account to check your subscriptions'}
+                      </p>
+                    </div>
+                    <button
+                      onClick={handleYouTubeSignIn}
+                      style={{
+                        padding: '0.5rem 1rem',
+                        backgroundColor: '#0284c7',
+                        color: 'white',
+                        border: 'none',
+                        borderRadius: '4px',
+                        cursor: 'pointer',
+                        fontWeight: '500'
+                      }}
+                    >
+                      {youtubeUser ? 'Switch Account' : 'Link YouTube Account'}
+                    </button>
+                  </div>
+                  <p style={{ marginTop: '0.5rem', fontSize: '0.8rem', color: '#64748b' }}>
+                    Use this if your Tasks are on a Brand Account but your Subscriptions are on your Main Account.
+                  </p>
+                </div>
 
                 {/* Monitored Channels List */}
                 <div className="channels-section">
