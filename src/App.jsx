@@ -5,7 +5,7 @@ import React, { useState, useEffect } from 'react';
 const CLIENT_ID = '367863809541-6j28nl498c3nu8lsea72v5ie9ovee0mh.apps.googleusercontent.com';
 const API_KEY = 'AIzaSyCyiaTJQvRxteisE1oB5TB4JHUPEVdq-YE';
 const DISCOVERY_DOC = 'https://www.googleapis.com/discovery/v1/apis/tasks/v1/rest';
-const SCOPES = 'https://www.googleapis.com/auth/tasks https://www.googleapis.com/auth/youtube.readonly';
+const SCOPES = 'https://www.googleapis.com/auth/tasks';
 
 function App() {
   const [isSignedIn, setIsSignedIn] = useState(false);
@@ -39,8 +39,6 @@ function App() {
   const [autoNotesProgress, setAutoNotesProgress] = useState({ current: 0, total: 0 });
   const [autoNotesStatus, setAutoNotesStatus] = useState('');
   const [isLoadingTasksPreview, setIsLoadingTasksPreview] = useState(false);
-  const [youtubeAccessToken, setYoutubeAccessToken] = useState(null);
-  const [youtubeUser, setYoutubeUser] = useState(null);
 
   // Due Date Management state
   const [selectedDueDateTaskList, setSelectedDueDateTaskList] = useState('');
@@ -371,7 +369,7 @@ function App() {
       }
       
       console.log('Attempting to sign in with gapi auth2...');
-      const result = await authInstance.signIn({ prompt: 'select_account' });
+      const result = await authInstance.signIn();
       console.log('Sign in successful:', result);
       setInitError(null); // Clear any previous errors
       
@@ -395,7 +393,6 @@ function App() {
       window.google.accounts.oauth2.initTokenClient({
         client_id: CLIENT_ID,
         scope: SCOPES,
-        prompt: 'select_account', // Force account chooser to allow Brand Account selection
         callback: (response) => {
           if (response.error) {
             reject(response);
@@ -420,53 +417,9 @@ function App() {
       const authInstance = window.gapi.auth2.getAuthInstance();
       await authInstance.signOut();
       setTasks([]);
-      setYoutubeAccessToken(null);
-      setYoutubeUser(null);
     } catch (error) {
       console.error('Error signing out:', error);
     }
-  };
-
-  const handleYouTubeSignIn = () => {
-    if (!window.google || !window.google.accounts) {
-      alert('Google Identity Services not loaded');
-      return;
-    }
-
-    const client = window.google.accounts.oauth2.initTokenClient({
-      client_id: CLIENT_ID,
-      scope: 'https://www.googleapis.com/auth/youtube.readonly',
-      prompt: 'select_account',
-      callback: async (response) => {
-        if (response.error) {
-          console.error('YouTube sign in failed:', response);
-          return;
-        }
-        
-        console.log('YouTube secondary sign in successful');
-        setYoutubeAccessToken(response.access_token);
-        
-        // Fetch user info for the secondary account
-        try {
-          const channelResponse = await fetch(
-            `https://www.googleapis.com/youtube/v3/channels?part=snippet&mine=true&key=${API_KEY}`,
-            { headers: { 'Authorization': `Bearer ${response.access_token}` } }
-          );
-          const channelData = await channelResponse.json();
-          if (channelData.items && channelData.items.length > 0) {
-            setYoutubeUser(channelData.items[0].snippet.title);
-            setAutoNotesStatus(`Connected to YouTube account: ${channelData.items[0].snippet.title}`);
-          } else {
-            setYoutubeUser('Unknown User');
-          }
-        } catch (e) {
-          console.error('Error fetching YouTube user info:', e);
-          setYoutubeUser('Connected');
-        }
-      },
-    });
-    
-    client.requestAccessToken();
   };
 
   const loadTaskLists = async () => {
@@ -2926,13 +2879,11 @@ function App() {
       const duration = formatDuration(video.contentDetails.duration);
       const title = video.snippet.title;
       const channelTitle = video.snippet.channelTitle;
-      const channelId = video.snippet.channelId;
       
       return {
         title,
         duration,
         channelTitle,
-        channelId,
         error: null
       };
     } catch (error) {
@@ -2941,94 +2892,8 @@ function App() {
         title: 'Video Unavailable',
         duration: 'Unknown',
         channelTitle: null,
-        channelId: null,
         error: error.message
       };
-    }
-  };
-
-  const fetchAllSubscriptions = async () => {
-    try {
-      // Try to get token from different possible locations
-      let accessToken = null;
-      
-      // First priority: Use the secondary YouTube account token if available
-      if (youtubeAccessToken) {
-        console.log('Using secondary YouTube account token for subscription check');
-        accessToken = youtubeAccessToken;
-      } else {
-        // Fallback: Use the main sign-in token
-        if (window.gapi && window.gapi.client && window.gapi.client.getToken) {
-          const tokenObj = window.gapi.client.getToken();
-          if (tokenObj) accessToken = tokenObj.access_token;
-        }
-        
-        if (!accessToken && window.gapi && window.gapi.auth2) {
-          const authInstance = window.gapi.auth2.getAuthInstance();
-          if (authInstance && authInstance.isSignedIn.get()) {
-            accessToken = authInstance.currentUser.get().getAuthResponse().access_token;
-          }
-        }
-      }
-      
-      if (!accessToken) {
-        console.warn('Could not find access token for YouTube subscription check');
-        return new Set();
-      }
-
-      // Diagnostic: Check who is signed in
-      try {
-        const channelResponse = await fetch(
-          `https://www.googleapis.com/youtube/v3/channels?part=snippet,contentDetails&mine=true&key=${API_KEY}`,
-          { headers: { 'Authorization': `Bearer ${accessToken}` } }
-        );
-        const channelData = await channelResponse.json();
-        if (channelData.items && channelData.items.length > 0) {
-          console.log(`Authenticated as YouTube Channel: ${channelData.items[0].snippet.title} (ID: ${channelData.items[0].id})`);
-        } else {
-          console.warn('Authenticated user has no YouTube channel associated.');
-        }
-      } catch (e) {
-        console.error('Error checking authenticated channel:', e);
-      }
-
-      console.log('Fetching all subscriptions...');
-      const subscribedChannelIds = new Set();
-      let nextPageToken = '';
-      
-      do {
-        const response = await fetch(
-          `https://www.googleapis.com/youtube/v3/subscriptions?part=snippet&mine=true&maxResults=50&pageToken=${nextPageToken}&key=${API_KEY}`,
-          {
-            headers: {
-              'Authorization': `Bearer ${accessToken}`
-            }
-          }
-        );
-        
-        if (!response.ok) {
-          const errorText = await response.text();
-          console.warn(`YouTube subscriptions fetch failed: ${response.status}`, errorText);
-          break;
-        }
-        
-        const data = await response.json();
-        if (data.items) {
-          data.items.forEach(item => {
-            if (item.snippet && item.snippet.resourceId) {
-              subscribedChannelIds.add(item.snippet.resourceId.channelId);
-            }
-          });
-        }
-        
-        nextPageToken = data.nextPageToken || '';
-      } while (nextPageToken);
-      
-      console.log(`Found ${subscribedChannelIds.size} total subscriptions.`);
-      return subscribedChannelIds;
-    } catch (error) {
-      console.error('Error fetching YouTube subscriptions:', error);
-      return new Set();
     }
   };
 
@@ -3055,14 +2920,14 @@ function App() {
     );
   };
 
-  const generateNotesText = (videoData, isShort, isSubscribed = false) => {
+  const generateNotesText = (videoData, isShort) => {
     let notes = '';
     
     // Add duration (always include actual duration, even for shorts)
     notes += videoData.duration;
     
-    // Add channel name if monitored OR subscribed
-    if (videoData.channelTitle && (isMonitoredChannel(videoData.channelTitle) || isSubscribed)) {
+    // Add channel name if monitored
+    if (videoData.channelTitle && isMonitoredChannel(videoData.channelTitle)) {
       notes += ` - ${videoData.channelTitle}`;
     }
     
@@ -3104,11 +2969,6 @@ function App() {
       }
 
       setAutoNotesProgress({ current: 0, total: tasksToProcess.length });
-      setAutoNotesStatus(`Found ${tasksToProcess.length} YouTube tasks to process. Fetching your subscriptions...`);
-      
-      // Fetch all subscriptions once
-      const subscribedChannelIds = await fetchAllSubscriptions();
-      
       setAutoNotesStatus(`Found ${tasksToProcess.length} YouTube tasks to process. Starting video data extraction...`);
 
       let successCount = 0;
@@ -3127,22 +2987,13 @@ function App() {
         try {
           // Get video data from YouTube API
           const videoData = await getVideoData(videoId);
-          let isSubscribed = false;
           
           if (videoData.error) {
             throw new Error(videoData.error);
           }
-
-          // Check subscription if not already monitored
-          if (videoData.channelId && !isMonitoredChannel(videoData.channelTitle)) {
-            isSubscribed = subscribedChannelIds.has(videoData.channelId);
-            if (isSubscribed) {
-              console.log(`User is subscribed to ${videoData.channelTitle} (found in local subscription list)`);
-            }
-          }
           
           // Generate notes text
-          const notesText = generateNotesText(videoData, isShort, isSubscribed);
+          const notesText = generateNotesText(videoData, isShort);
           
           setAutoNotesStatus(`Processing ${i + 1} of ${tasksToProcess.length}: Updating task notes for "${task.title}"`);
           
@@ -3524,43 +3375,6 @@ function App() {
                     )}
                   </div>
                 )}
-
-                {/* YouTube Account Connection */}
-                <div className="youtube-account-section" style={{ 
-                  marginBottom: '1.5rem', 
-                  padding: '1rem', 
-                  backgroundColor: '#f0f9ff', 
-                  border: '1px solid #bae6fd', 
-                  borderRadius: '6px' 
-                }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <div>
-                      <h3 style={{ margin: '0 0 0.5rem 0', color: '#0369a1' }}>YouTube Subscription Check</h3>
-                      <p style={{ margin: 0, fontSize: '0.9rem', color: '#0c4a6e' }}>
-                        {youtubeUser 
-                          ? `Connected as: ${youtubeUser}` 
-                          : 'Connect a YouTube account to check your subscriptions'}
-                      </p>
-                    </div>
-                    <button
-                      onClick={handleYouTubeSignIn}
-                      style={{
-                        padding: '0.5rem 1rem',
-                        backgroundColor: '#0284c7',
-                        color: 'white',
-                        border: 'none',
-                        borderRadius: '4px',
-                        cursor: 'pointer',
-                        fontWeight: '500'
-                      }}
-                    >
-                      {youtubeUser ? 'Switch Account' : 'Link YouTube Account'}
-                    </button>
-                  </div>
-                  <p style={{ marginTop: '0.5rem', fontSize: '0.8rem', color: '#64748b' }}>
-                    Use this if your Tasks are on a Brand Account but your Subscriptions are on your Main Account.
-                  </p>
-                </div>
 
                 {/* Monitored Channels List */}
                 <div className="channels-section">
