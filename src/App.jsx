@@ -2904,24 +2904,47 @@ function App() {
     if (!channelId) return false;
     
     try {
+      // Try to get token from different possible locations
+      let accessToken = null;
+      
+      if (window.gapi && window.gapi.client && window.gapi.client.getToken) {
+        const tokenObj = window.gapi.client.getToken();
+        if (tokenObj) accessToken = tokenObj.access_token;
+      }
+      
+      if (!accessToken && window.gapi && window.gapi.auth2) {
+        const authInstance = window.gapi.auth2.getAuthInstance();
+        if (authInstance && authInstance.isSignedIn.get()) {
+          accessToken = authInstance.currentUser.get().getAuthResponse().access_token;
+        }
+      }
+      
+      if (!accessToken) {
+        console.warn('Could not find access token for YouTube subscription check');
+        return false;
+      }
+
+      console.log(`Checking subscription for channel ${channelId}...`);
+      
       const response = await fetch(
         `https://www.googleapis.com/youtube/v3/subscriptions?part=snippet&mine=true&forChannelId=${channelId}&key=${API_KEY}`,
         {
           headers: {
-            'Authorization': `Bearer ${window.gapi.auth.getToken().access_token}`
+            'Authorization': `Bearer ${accessToken}`
           }
         }
       );
       
       if (!response.ok) {
-        // If 403 or 401, it might be because the user hasn't granted YouTube permissions yet
-        // We'll just return false and not treat it as a critical error
-        console.warn(`YouTube subscription check failed: ${response.status}`);
+        const errorText = await response.text();
+        console.warn(`YouTube subscription check failed: ${response.status}`, errorText);
         return false;
       }
       
       const data = await response.json();
-      return data.items && data.items.length > 0;
+      const isSubscribed = data.items && data.items.length > 0;
+      console.log(`Subscription check result for ${channelId}: ${isSubscribed}`);
+      return isSubscribed;
     } catch (error) {
       console.error('Error checking YouTube subscription:', error);
       return false;
