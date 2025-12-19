@@ -369,7 +369,7 @@ function App() {
       }
       
       console.log('Attempting to sign in with gapi auth2...');
-      const result = await authInstance.signIn();
+      const result = await authInstance.signIn({ prompt: 'select_account' });
       console.log('Sign in successful:', result);
       setInitError(null); // Clear any previous errors
       
@@ -393,6 +393,7 @@ function App() {
       window.google.accounts.oauth2.initTokenClient({
         client_id: CLIENT_ID,
         scope: SCOPES,
+        prompt: 'select_account', // Force account chooser to allow Brand Account selection
         callback: (response) => {
           if (response.error) {
             reject(response);

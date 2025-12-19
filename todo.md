@@ -74,6 +74,7 @@
 - [x] Verify correct Channel ID for "Game Maker's Toolkit"
 - [x] Investigate if `mine=true` works correctly with Brand Accounts
 - [x] Consider fetching all subscriptions and filtering locally if `forChannelId` is unreliable
-- [ ] Implement `fetchAllSubscriptions` to get all user subscriptions at once
-- [ ] Update `handleProcessYouTubeTasks` to use the local subscription list
-- [ ] Add logging to show total number of subscriptions found
+- [x] Implement `fetchAllSubscriptions` to get all user subscriptions at once
+- [x] Update `handleProcessYouTubeTasks` to use the local subscription list
+- [x] Add logging to show total number of subscriptions found
+- [ ] Update Google Sign-In to use `prompt: 'select_account'` to allow Brand Account selection
