@@ -70,7 +70,10 @@
 - [x] Update `processAutoNotes` to fetch video details and check subscriptions
 - [x] Use channel name as note if subscribed
 - [x] Fix YouTube subscription check - improve token retrieval and add logging
-- [ ] Debug YouTube subscription check failure
-- [ ] Verify correct Channel ID for "Game Maker's Toolkit"
-- [ ] Investigate if `mine=true` works correctly with Brand Accounts
-- [ ] Consider fetching all subscriptions and filtering locally if `forChannelId` is unreliable
+- [x] Debug YouTube subscription check failure
+- [x] Verify correct Channel ID for "Game Maker's Toolkit"
+- [x] Investigate if `mine=true` works correctly with Brand Accounts
+- [x] Consider fetching all subscriptions and filtering locally if `forChannelId` is unreliable
+- [ ] Implement `fetchAllSubscriptions` to get all user subscriptions at once
+- [ ] Update `handleProcessYouTubeTasks` to use the local subscription list
+- [ ] Add logging to show total number of subscriptions found

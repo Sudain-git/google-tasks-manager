@@ -2900,9 +2900,7 @@ function App() {
     }
   };
 
-  const checkYouTubeSubscription = async (channelId) => {
-    if (!channelId) return false;
-    
+  const fetchAllSubscriptions = async () => {
     try {
       // Try to get token from different possible locations
       let accessToken = null;
@@ -2921,10 +2919,10 @@ function App() {
       
       if (!accessToken) {
         console.warn('Could not find access token for YouTube subscription check');
-        return false;
+        return new Set();
       }
 
-      // Diagnostic: Check who is signed in and their total subscriptions
+      // Diagnostic: Check who is signed in
       try {
         const channelResponse = await fetch(
           `https://www.googleapis.com/youtube/v3/channels?part=snippet,contentDetails&mine=true&key=${API_KEY}`,
@@ -2940,30 +2938,43 @@ function App() {
         console.error('Error checking authenticated channel:', e);
       }
 
-      console.log(`Checking subscription for channel ${channelId}...`);
+      console.log('Fetching all subscriptions...');
+      const subscribedChannelIds = new Set();
+      let nextPageToken = '';
       
-      const response = await fetch(
-        `https://www.googleapis.com/youtube/v3/subscriptions?part=snippet&mine=true&forChannelId=${channelId}&key=${API_KEY}`,
-        {
-          headers: {
-            'Authorization': `Bearer ${accessToken}`
+      do {
+        const response = await fetch(
+          `https://www.googleapis.com/youtube/v3/subscriptions?part=snippet&mine=true&maxResults=50&pageToken=${nextPageToken}&key=${API_KEY}`,
+          {
+            headers: {
+              'Authorization': `Bearer ${accessToken}`
+            }
           }
+        );
+        
+        if (!response.ok) {
+          const errorText = await response.text();
+          console.warn(`YouTube subscriptions fetch failed: ${response.status}`, errorText);
+          break;
         }
-      );
+        
+        const data = await response.json();
+        if (data.items) {
+          data.items.forEach(item => {
+            if (item.snippet && item.snippet.resourceId) {
+              subscribedChannelIds.add(item.snippet.resourceId.channelId);
+            }
+          });
+        }
+        
+        nextPageToken = data.nextPageToken || '';
+      } while (nextPageToken);
       
-      if (!response.ok) {
-        const errorText = await response.text();
-        console.warn(`YouTube subscription check failed: ${response.status}`, errorText);
-        return false;
-      }
-      
-      const data = await response.json();
-      const isSubscribed = data.items && data.items.length > 0;
-      console.log(`Subscription check result for ${channelId}: ${isSubscribed}`);
-      return isSubscribed;
+      console.log(`Found ${subscribedChannelIds.size} total subscriptions.`);
+      return subscribedChannelIds;
     } catch (error) {
-      console.error('Error checking YouTube subscription:', error);
-      return false;
+      console.error('Error fetching YouTube subscriptions:', error);
+      return new Set();
     }
   };
 
@@ -3039,6 +3050,11 @@ function App() {
       }
 
       setAutoNotesProgress({ current: 0, total: tasksToProcess.length });
+      setAutoNotesStatus(`Found ${tasksToProcess.length} YouTube tasks to process. Fetching your subscriptions...`);
+      
+      // Fetch all subscriptions once
+      const subscribedChannelIds = await fetchAllSubscriptions();
+      
       setAutoNotesStatus(`Found ${tasksToProcess.length} YouTube tasks to process. Starting video data extraction...`);
 
       let successCount = 0;
@@ -3065,10 +3081,9 @@ function App() {
 
           // Check subscription if not already monitored
           if (videoData.channelId && !isMonitoredChannel(videoData.channelTitle)) {
-            setAutoNotesStatus(`Processing ${i + 1} of ${tasksToProcess.length}: Checking subscription for "${videoData.channelTitle}"...`);
-            isSubscribed = await checkYouTubeSubscription(videoData.channelId);
+            isSubscribed = subscribedChannelIds.has(videoData.channelId);
             if (isSubscribed) {
-              console.log(`User is subscribed to ${videoData.channelTitle}`);
+              console.log(`User is subscribed to ${videoData.channelTitle} (found in local subscription list)`);
             }
           }
           
